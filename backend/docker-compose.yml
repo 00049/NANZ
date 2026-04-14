@@ -11,6 +11,15 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  postgres_test:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: shieldcheck_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: localdev
+    ports:
+      - "5433:5432"
+
   redis:
     image: redis:7-alpine
     ports:
