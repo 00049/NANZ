@@ -24,7 +24,7 @@ if settings.SENTRY_DSN:
             dsn=settings.SENTRY_DSN,
             environment=settings.APP_ENV,
             integrations=[FastApiIntegration()],
-            traces_sample_rate=1.0,
+            traces_sample_rate=0.2,
         )
         logger.info("Sentry initialized successfully.")
     except Exception as e:
@@ -79,7 +79,7 @@ async def add_security_headers(request: Request, call_next):
 from app.routers import health, scans, reports, payments
 
 app.include_router(health.router)
-app.include_router(scans.router, prefix="/api/scans")
-app.include_router(reports.router, prefix="/api/reports")
-app.include_router(payments.router, prefix="/api/payments")
+app.include_router(scans.router, prefix="/api/v1/scans")
+app.include_router(reports.router, prefix="/api/v1/reports")
+app.include_router(payments.router, prefix="/api/v1/payments")
 

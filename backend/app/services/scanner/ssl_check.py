@@ -7,7 +7,7 @@ from typing import Optional
 @dataclass
 class SSLResult:
     valid: bool
-    expiry_date: Optional[datetime]
+    expiry_date: Optional[str]
     days_until_expiry: Optional[int]
     tls_version: Optional[str]
     issuer: Optional[str]
@@ -71,7 +71,7 @@ async def run(domain: str) -> SSLResult:
 
                 return SSLResult(
                     valid=True,
-                    expiry_date=expiry,
+                    expiry_date=expiry.isoformat() if expiry else None,
                     days_until_expiry=days_left,
                     tls_version=protocol,
                     issuer=issuer_cn,

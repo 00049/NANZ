@@ -20,7 +20,9 @@ def validate_scan_url(url: str) -> tuple[bool, str]:
     if parsed.scheme not in ("http", "https"):
         return False, "URL must start with http:// or https://"
 
-    hostname = parsed.hostname or ""
+    if parsed.hostname is None:
+        return False, "Hostname cannot be None"
+    hostname = parsed.hostname
     if hostname in ("localhost", "127.0.0.1", "0.0.0.0", ""):
         return False, "Cannot scan local addresses"
         

@@ -11,3 +11,13 @@ async def health_check():
         "version": "1.0.0",
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+@router.get("/", tags=["System"])
+async def root_redirect():
+    """Root endpoint to show basic API info and reduce 404s for browsers."""
+    return {
+        "message": "Welcome to the ShieldCheck API. System is Operational.",
+        "docs": "/docs",
+        "health": "/health",
+        "versions": ["v1"]
+    }
