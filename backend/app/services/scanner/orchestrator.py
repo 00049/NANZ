@@ -1,7 +1,7 @@
 import asyncio
+import hashlib
 import logging
 import json
-import traceback
 from datetime import datetime, timezone
 from dataclasses import asdict
 
@@ -9,38 +9,54 @@ from app.services.scanner import ssl_check, headers_check, dns_check, port_check
 from app.services.classifier import classify_findings
 from app.services.ai_translator import translate_to_plain_english
 from app.db.session import async_session_maker
-from app.models.scan import Scan
-from app.models.report import Report
-from app.models.user import User
+from app.models import Report, Scan
+from app.config import settings
 from redis.asyncio import Redis
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 
-async def run_full_scan(scan_id: str, url: str, url_hash: str, redis_client: Redis):
+
+def _json_safe(value: object) -> object:
+    """Convert dataclass output into JSON-compatible values."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
+
+
+async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
     """
     Orchestrates the running of all 7 checks concurrently.
     """
     logger.info(f"Starting orchestration for scan_id={scan_id}, url={url}")
     start_time = datetime.now(timezone.utc)
     
-    async with async_session_maker() as db:
-        result = await db.execute(select(Scan).where(Scan.id == scan_id))
-        scan = result.scalars().first()
-        await db.refresh(scan)
+    try:
+        async with async_session_maker() as db:
+            result = await db.execute(select(Scan).where(Scan.id == scan_id))
+            scan = result.scalars().first()
 
-        if not scan:
-            logger.error(f"Scan {scan_id} not found in DB.")
-            return
+            if not scan:
+                logger.error(f"Scan {scan_id} not found in DB.")
+                return
 
-        scan.status = "running"
-        await db.commit()
+            await db.refresh(scan)
+            scan.status = "running"
+            await db.commit()
 
-        domain = scan.domain
-        ip_address = scan.ip_address
+            domain = scan.domain
+            ip_address = scan.ip_address
+    except SQLAlchemyError as e:
+        logger.error(f"Database error preparing scan_id={scan_id}: {e}", exc_info=True)
+        return
     
     progress_key = f"scan:progress:{scan_id}"
-    lock_key = f"scan:lock:{url_hash}"
+    url_hash = hashlib.sha256(url.lower().strip().encode("utf-8")).hexdigest()
     cache_key = f"scan:url:{url_hash}"
 
     progress = {
@@ -55,50 +71,54 @@ async def run_full_scan(scan_id: str, url: str, url_hash: str, redis_client: Red
     
     try:
         await redis_client.set(progress_key, json.dumps(progress), ex=3600)
-    except Exception as e:
-        logger.error(f"Redis error setting progress: {e}")
+    except (ConnectionError, TimeoutError, OSError, ValueError) as e:
+        logger.error(f"Redis error setting scan_id={scan_id} progress: {e}", exc_info=True)
 
     try:
-        # Check wrappers with progress updates
-        async def wrap_check(name, coroutine):
+        async def wrap_check(name: str, coroutine: asyncio.Future) -> dict:
+            """Run a scanner coroutine with timeout, progress, and safe fallback data."""
             check_start = datetime.now(timezone.utc)
             try:
                 progress[name] = "running"
                 try:
                     await redis_client.set(progress_key, json.dumps(progress), ex=3600)
-                except:
-                    pass
+                except (ConnectionError, TimeoutError, OSError, ValueError) as e:
+                    logger.error(f"Redis error marking scan_id={scan_id} check={name} running: {e}", exc_info=True)
                 
-                # Each explicitly wrapped in wait_for
-                res = await asyncio.wait_for(coroutine, timeout=15.0)
+                res = await asyncio.wait_for(coroutine, timeout=10.0)
                 progress[name] = "complete"
                 
                 check_duration = int((datetime.now(timezone.utc) - check_start).total_seconds() * 1000)
                 logger.info(f"Scan {scan_id} module {name} completed successfully in {check_duration}ms")
                 
-                return {"status": "success", "data": asdict(res), "error": None}
+                return {"status": "success", "data": _json_safe(asdict(res)), "error": None}
             except Exception as e:
                 check_duration = int((datetime.now(timezone.utc) - check_start).total_seconds() * 1000)
                 logger.error(f"Scan {scan_id} module {name} failed in {check_duration}ms: {e}", exc_info=True)
                 progress[name] = "failed"
-                # Graceful degradation logic
                 raw_data = None
-                if name == "ssl_check": raw_data = asdict(ssl_check.SSLResult(valid=False, expiry_date=None, days_until_expiry=None, tls_version=None, issuer=None, is_self_signed=False, error=str(e)))
-                if name == "headers_check": raw_data = asdict(headers_check.HeadersResult(error=str(e)))
-                if name == "dns_check": raw_data = asdict(dns_check.DNSResult(has_spf=False, has_dmarc=False, has_dkim=False, spf_record=None, dmarc_record=None, error=str(e)))
-                if name == "port_check": raw_data = asdict(port_check.PortResult(error=str(e)))
-                if name == "breach_check": raw_data = asdict(breach_check.BreachResult(error=str(e)))
-                if name == "cms_check": raw_data = asdict(cms_check.CMSResult(error=str(e)))
-                if name == "cookie_check": raw_data = asdict(cookie_check.CookieResult(error=str(e)))
-                
-                return {"status": "error", "data": raw_data, "error": str(e)}
+                if name == "ssl_check":
+                    raw_data = asdict(ssl_check.SSLResult(valid=False, expiry_date=None, days_until_expiry=None, tls_version=None, issuer=None, is_self_signed=False, error="SSL check unavailable"))
+                if name == "headers_check":
+                    raw_data = asdict(headers_check.HeadersResult(error="Header check unavailable"))
+                if name == "dns_check":
+                    raw_data = asdict(dns_check.DNSResult(has_spf=False, has_dmarc=False, has_dkim=False, spf_record=None, dmarc_record=None, error="DNS check unavailable"))
+                if name == "port_check":
+                    raw_data = asdict(port_check.PortResult(error="Port check unavailable"))
+                if name == "breach_check":
+                    raw_data = asdict(breach_check.BreachResult(error="Breach check unavailable"))
+                if name == "cms_check":
+                    raw_data = asdict(cms_check.CMSResult(error="CMS check unavailable"))
+                if name == "cookie_check":
+                    raw_data = asdict(cookie_check.CookieResult(error="Cookie check unavailable"))
+
+                return {"status": "error", "data": raw_data, "error": "Check failed"}
             finally:
                 try:
                     await redis_client.set(progress_key, json.dumps(progress), ex=3600)
-                except:
-                    pass
+                except (ConnectionError, TimeoutError, OSError, ValueError) as e:
+                    logger.error(f"Redis error updating scan_id={scan_id} check={name}: {e}", exc_info=True)
 
-        # Run all concurrently
         results = await asyncio.gather(
             wrap_check("ssl_check", ssl_check.run(domain)),
             wrap_check("headers_check", headers_check.run(url)),
@@ -122,16 +142,10 @@ async def run_full_scan(scan_id: str, url: str, url_hash: str, redis_client: Red
         
         all_failed = all(res.get("status") == "error" for _, res in raw_findings.items() if isinstance(res, dict))
         
-        # We must re-map raw_findings for the classifier which expects just the raw data dictionary
         classifier_data = {k: v.get("data", {}) for k, v in raw_findings.items()}
 
-        # Classify
         classified = classify_findings(classifier_data)
-        
-        # AI Translation
         ai_items = await translate_to_plain_english(classified, domain)
-        
-        # Format explicitly into dict for JSONB
         ai_items_dict = [item.model_dump() for item in ai_items]
         
         overall_severity = "GREEN"
@@ -174,9 +188,9 @@ async def run_full_scan(scan_id: str, url: str, url_hash: str, redis_client: Red
                 # Cache successful/partial successful scan
                 if not all_failed:
                     try:
-                        await redis_client.set(cache_key, scan.id, ex=21600)  # 6 hours
-                    except Exception as e:
-                        logger.error(f"Redis cache error: {e}")
+                        await redis_client.set(cache_key, str(scan.id), ex=settings.SCAN_CACHE_HOURS * 3600)
+                    except (ConnectionError, TimeoutError, OSError, ValueError) as e:
+                        logger.error(f"Redis cache error for scan_id={scan_id}: {e}", exc_info=True)
                         
                 logger.info(f"Scan {scan_id} completed in {duration_ms}ms with status={scan.status}")
 
@@ -187,11 +201,10 @@ async def run_full_scan(scan_id: str, url: str, url_hash: str, redis_client: Red
             scan = result.scalars().first()
             if scan:
                 scan.status = "failed"
-                scan.error_message = str(e)
+                scan.error_message = "Scan processing failed"
                 await db.commit()
     finally:
-        # Delete the idempotency lock
         try:
-            await redis_client.delete(lock_key)
-        except Exception as e:
-            logger.error(f"Failed to release lock {lock_key}: {e}")
+            await redis_client.expire(progress_key, 3600)
+        except (ConnectionError, TimeoutError, OSError, ValueError) as e:
+            logger.error(f"Failed to set scan_id={scan_id} progress TTL: {e}", exc_info=True)

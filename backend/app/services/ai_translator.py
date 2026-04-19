@@ -35,6 +35,7 @@ STATIC_FALLBACKS = {
 }
 
 async def _call_claude(classified: List[Dict[str, Any]], domain: str) -> str:
+    """Call Claude to translate pre-classified findings into plain English."""
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     
     system_prompt = """You are a cybersecurity advisor writing for a small business owner with zero technical background. You receive pre-classified security findings and write plain-English explanations.
@@ -70,6 +71,7 @@ def _strip_jargon(text: str) -> str:
     return re.sub(r'\s+', ' ', result).strip()
 
 def _get_static_fallback(finding: Dict[str, Any]) -> RiskItem:
+    """Return deterministic fallback copy for a classified finding."""
     key = finding.get("key")
     severity = finding.get("severity", "AMBER")
     
@@ -126,7 +128,7 @@ async def translate_to_plain_english(classified: List[Dict[str, Any]], domain: s
             return results
             
         except Exception as e:
-            logger.warning(f"AI translation attempt {attempt + 1} failed: {e}")
+            logger.error(f"AI translation attempt {attempt + 1} failed: {e}", exc_info=True)
             if attempt == 1:
                 break # On second failure, fallback
                 

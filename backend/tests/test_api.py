@@ -12,16 +12,16 @@ async def test_health_endpoint_returns_ok(test_client):
 @patch('app.utils.url_validator.socket.gethostbyname')
 async def test_post_scan_valid_url_returns_202(mock_dns, test_client):
     mock_dns.return_value = "8.8.8.8"
-    with patch('app.routers.scans.run_scan') as mock_run:
+    with patch('app.services.scan_service.run_scan') as mock_run:
         response = await test_client.post("/api/scans", json={"url": "https://example.com"})
         assert response.status_code == 202
         assert "scan_id" in response.json()
         assert response.json()["status"] == "pending"
 
 @pytest.mark.asyncio
-async def test_post_scan_invalid_url_returns_400(test_client): # Expected 400 per code
+async def test_post_scan_invalid_url_returns_422(test_client):
     response = await test_client.post("/api/scans", json={"url": "invalid-url"})
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 @pytest.mark.asyncio
 async def test_post_scan_private_ip_returns_400(test_client):
@@ -47,7 +47,7 @@ async def test_rate_limit_scan_endpoint(mock_dns, test_client):
     # The rate limit is 5 per hour.
     # Send 6 requests, the 6th should fail.
     # We spoof the IP explicitly to ensure clean test
-    with patch('app.routers.scans.run_scan'):
+    with patch('app.services.scan_service.run_scan'):
         headers = {"X-Forwarded-For": "192.168.1.100"}
         for i in range(5):
             res = await test_client.post("/api/scans", json={"url": f"https://example{i}.com"}, headers=headers)

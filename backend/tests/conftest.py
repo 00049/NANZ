@@ -2,12 +2,14 @@ import pytest
 import os
 import asyncio
 from httpx import AsyncClient, ASGITransport
-from app.main import app
-from app.db.base import Base
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from redis.asyncio import Redis
 
 os.environ["APP_ENV"] = "testing"
 os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "postgresql+asyncpg://postgres:localdev@localhost:5432/shieldcheck_test")
+
+from app.main import app
+from app.db.base import Base
 
 # Re-create engine/session logic for test DB
 test_engine = create_async_engine(os.environ["DATABASE_URL"])
@@ -23,6 +25,14 @@ def event_loop():
 
 @pytest.fixture(autouse=True)
 async def setup_db():
+    redis_client = Redis.from_url("redis://localhost:6379", decode_responses=True)
+    try:
+        keys = await redis_client.keys("scan:*")
+        if keys:
+            await redis_client.delete(*keys)
+    finally:
+        await redis_client.aclose()
+
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)

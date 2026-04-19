@@ -1,19 +1,16 @@
 import hmac
 import hashlib
+import logging
 from uuid import UUID
 from fastapi import APIRouter, Depends, Request, HTTPException
-from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timezone
 
 from app.db.session import get_db
-from app.models.scan import Scan
-from app.models.report import Report
-from app.models.payment import Payment
-from app.models.user import User
+from app.models import Payment, Report, Scan, User
 from app.schemas.payment import PaymentCreateRequest, PaymentCreateResponse, PaymentVerifyRequest, PaymentVerifyResponse
-from app.schemas.common import WrappedResponse, success_response, error_response
 from app.utils.auth import create_report_token
 from app.config import settings
 from app.main import limiter
@@ -24,57 +21,65 @@ except ImportError:
     create_razorpay_order = None
 
 router = APIRouter(tags=["Payments"])
+logger = logging.getLogger(__name__)
 
-@router.post("/create", response_model=WrappedResponse[PaymentCreateResponse])
+
+@router.post("/create", response_model=PaymentCreateResponse)
 @limiter.limit("10/hour")
-async def create_payment(request: Request, body: PaymentCreateRequest, db: AsyncSession = Depends(get_db)):
-    # Verify scan exists and is complete
+async def create_payment(request: Request, body: PaymentCreateRequest, db: AsyncSession = Depends(get_db)) -> PaymentCreateResponse:
+    """Create a Razorpay order for a completed scan report."""
     scan_result = await db.execute(select(Scan).where(Scan.id == body.scan_id))
     scan = scan_result.scalars().first()
     if not scan or scan.status != "complete":
-        return JSONResponse(status_code=400, content=error_response("Scan not ready for payment or not found"))
+        raise HTTPException(status_code=400, detail="Scan not ready for payment or not found")
 
-    # Check if already paid
     existing_payment_result = await db.execute(
         select(Payment).where(Payment.scan_id == body.scan_id, Payment.status == "paid")
     )
     if existing_payment_result.scalars().first():
-        return JSONResponse(status_code=400, content=error_response("Already paid for this scan"))
+        raise HTTPException(status_code=400, detail="Already paid for this scan")
 
-    # Create Razorpay order
     if not create_razorpay_order:
-        return JSONResponse(status_code=500, content=error_response("Razorpay service unavailable"))
+        raise HTTPException(status_code=500, detail="Payment provider unavailable")
         
-    amount_paise = 49900  # Rs. 499
-    order_id = create_razorpay_order(amount_paise, receipt=str(body.scan_id))
+    amount_paise = 49900
+    try:
+        order_id = create_razorpay_order(amount_paise, receipt=str(body.scan_id))
+    except (ValueError, RuntimeError, KeyError) as e:
+        logger.error(f"Razorpay order creation failed for scan_id={body.scan_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail="Payment provider unavailable") from e
 
-    # Store payment
     payment = Payment(
         scan_id=body.scan_id,
         user_email=body.email,
         amount_paise=amount_paise,
         razorpay_order_id=order_id
     )
-    db.add(payment)
-    await db.commit()
-    await db.refresh(payment)
+    try:
+        db.add(payment)
+        await db.commit()
+        await db.refresh(payment)
+    except SQLAlchemyError as e:
+        logger.error(f"Database error storing payment for scan_id={body.scan_id}: {e}", exc_info=True)
+        await db.rollback()
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable") from e
 
-    return success_response(PaymentCreateResponse(
+    return PaymentCreateResponse(
         order_id=order_id,
         amount=amount_paise,
         currency="INR",
         key_id=settings.RAZORPAY_KEY_ID
-    ).model_dump())
+    )
 
 
-@router.post("/verify", response_model=WrappedResponse[PaymentVerifyResponse])
-async def verify_payment(body: PaymentVerifyRequest, db: AsyncSession = Depends(get_db)):
+@router.post("/verify", response_model=PaymentVerifyResponse)
+async def verify_payment(body: PaymentVerifyRequest, db: AsyncSession = Depends(get_db)) -> PaymentVerifyResponse:
+    """Verify a Razorpay payment HMAC and issue a report access JWT."""
     order_id = body.razorpay_order_id
     payment_id = body.razorpay_payment_id
     signature = body.razorpay_signature
     email = body.email
 
-    # Verify HMAC signature
     msg = f"{order_id}|{payment_id}"
     expected_sig = hmac.new(
         key=settings.RAZORPAY_KEY_SECRET.encode("utf-8"),
@@ -83,15 +88,13 @@ async def verify_payment(body: PaymentVerifyRequest, db: AsyncSession = Depends(
     ).hexdigest()
 
     if not hmac.compare_digest(expected_sig, signature):
-        return JSONResponse(status_code=400, content=error_response("Invalid payment signature"))
+        raise HTTPException(status_code=400, detail="Invalid payment signature")
 
-    # Retrieve payment record
     payment_result = await db.execute(select(Payment).where(Payment.razorpay_order_id == order_id))
     payment = payment_result.scalars().first()
     if not payment:
-        return JSONResponse(status_code=404, content=error_response("Order not found"))
+        raise HTTPException(status_code=404, detail="Order not found")
 
-    # Upsert user based on email
     user_result = await db.execute(select(User).where(User.email == email))
     user = user_result.scalars().first()
     if not user:
@@ -100,12 +103,10 @@ async def verify_payment(body: PaymentVerifyRequest, db: AsyncSession = Depends(
         await db.commit()
         await db.refresh(user)
 
-    # Check for idempotency
     if payment.status == "paid":
         token = create_report_token(str(user.id), str(payment.scan_id))
-        return success_response(PaymentVerifyResponse(access_token=token).model_dump())
+        return PaymentVerifyResponse(access_token=token)
 
-    # Update payment and report
     payment.status = "paid"
     payment.razorpay_payment_id = payment_id
     payment.paid_at = datetime.now(timezone.utc)
@@ -117,6 +118,5 @@ async def verify_payment(body: PaymentVerifyRequest, db: AsyncSession = Depends(
         
     await db.commit()
 
-    # Issue JWT token
     token = create_report_token(str(user.id), str(payment.scan_id))
-    return success_response(PaymentVerifyResponse(access_token=token).model_dump())
+    return PaymentVerifyResponse(access_token=token)

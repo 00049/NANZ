@@ -4,7 +4,8 @@ from app.config import settings
 celery = Celery(
     "shieldcheck",
     broker=settings.REDIS_URL,
-    backend=settings.REDIS_URL
+    backend=settings.REDIS_URL,
+    include=["app.tasks.scan_tasks"]
 )
 
 celery.conf.update(

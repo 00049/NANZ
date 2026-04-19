@@ -4,6 +4,8 @@ from uuid import UUID
 from datetime import datetime
 
 class RiskItem(BaseModel):
+    """Plain-English risk item returned to users."""
+
     title: str
     severity: Literal["RED", "AMBER", "GREEN"]
     business_impact: str
@@ -11,15 +13,24 @@ class RiskItem(BaseModel):
     confidence: Literal["HIGH", "MEDIUM", "LOW"]
 
     @field_validator("title")
-    def title_not_too_long(cls, v):
-        if len(v.split()) > 15:
+    def title_not_too_long(cls, v: str) -> str:
+        """Validate title length for business-readable report cards."""
+        if len(v.split()) > 12:
             raise ValueError("Title too long")
         return v
 
+    model_config = ConfigDict(from_attributes=True)
+
 class ReportEmailRequest(BaseModel):
+    """Request body for emailing a paid report."""
+
     email: EmailStr
 
+    model_config = ConfigDict(from_attributes=True)
+
 class ReportResponse(BaseModel):
+    """Full paid report response."""
+
     id: UUID
     scan_id: UUID
     overall_severity: str
