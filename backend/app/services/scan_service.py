@@ -61,7 +61,7 @@ async def create_new_scan(url: str, resolved_ip: str, client_ip: str | None, db:
     return {
         "scan_id": scan.id,
         "status": "pending",
-        "estimated_duration_seconds": 45
+        "estimated_duration_seconds": 90  # Increased for expanded checks
     }
 
 
@@ -90,32 +90,70 @@ async def get_scan_status_data(scan_id: UUID, db: AsyncSession, redis_client: Re
         report = report_result.scalars().first()
         if report:
             response_data["overall_severity"] = report.overall_severity
+            response_data["overall_score"] = report.overall_score
+            response_data["total_findings"] = report.total_findings
             if report.risk_items and len(report.risk_items) > 0:
                 response_data["preview_risk"] = report.risk_items[0]
-                
+
     elif scan.status == "failed":
         response_data["error_message"] = scan.error_message
-        
+
     return response_data
 
 
 async def get_scan_preview_data(scan_id: UUID, db: AsyncSession) -> dict:
-    """Return the unlocked free preview for a completed scan."""
+    """
+    Return the free preview for a completed scan.
+
+    FREE gate shows:
+    - Overall severity badge
+    - Overall security score (0-100)
+    - Top 3 risk items (title + business_impact only)
+    - Count breakdown
+    - Executive summary (2 sentences only)
+    """
     result = await db.execute(select(Scan).where(Scan.id == scan_id))
     scan = result.scalars().first()
     if not scan or scan.status != "complete":
         return {"error": "Scan not ready or not found"}
-        
+
     report_result = await db.execute(select(Report).where(Report.scan_id == scan_id))
     report = report_result.scalars().first()
-    
+
     if not report:
         return {"error": "Report not generated"}
-        
-    risk_item = report.risk_items[0] if report.risk_items else {}
+
+    # Free preview: top 3 risks with limited fields
+    top_risks = []
+    if report.risk_items:
+        for item in report.risk_items[:3]:
+            top_risks.append({
+                "title": item.get("title", ""),
+                "severity": item.get("severity", ""),
+                "business_impact": item.get("business_impact", ""),
+            })
+
+    # Truncate executive summary to ~2 sentences for free
+    exec_summary = report.executive_summary or ""
+    sentences = exec_summary.split(". ")
+    free_summary = ". ".join(sentences[:2]) + "." if len(sentences) > 1 else exec_summary
+
+    total_findings = report.total_findings or 0
+    locked_count = max(0, total_findings - 3)
+
     return {
+        "scan_id": str(scan.id),
+        "domain": scan.domain,
         "overall_severity": report.overall_severity,
-        "risk_item": risk_item,
-        "locked_risks_count": 2,
-        "is_paid": report.is_paid
+        "overall_score": report.overall_score or 0,
+        "executive_summary": free_summary,
+        "top_risks": top_risks,
+        "critical_count": report.critical_count or 0,
+        "high_count": report.high_count or 0,
+        "medium_count": report.medium_count or 0,
+        "low_count": report.low_count or 0,
+        "info_count": report.info_count or 0,
+        "total_findings": total_findings,
+        "locked_risks_count": locked_count,
+        "is_paid": report.is_paid,
     }

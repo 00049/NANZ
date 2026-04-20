@@ -14,8 +14,8 @@ celery.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
-    task_time_limit=120,
-    task_soft_time_limit=90,
+    task_time_limit=300,       # Hard limit: 5 minutes (expanded checks take longer)
+    task_soft_time_limit=240,  # Soft limit: 4 minutes
 )
 
 redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=1.0, socket_timeout=1.0)
@@ -25,8 +25,9 @@ redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_
 def run_scan(self, scan_id: str, url: str) -> None:
     """
     Celery task entry point to run a full orchestrated scan asynchronously.
+    Expanded to support 10 check modules across 8 security domains.
     """
-    logger.info(f"Starting scan task for scan_id: {scan_id}, url: {url}")
+    logger.info(f"Starting expanded scan task for scan_id: {scan_id}, url: {url}")
     
     try:
         loop = asyncio.get_event_loop()

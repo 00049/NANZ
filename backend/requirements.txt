@@ -19,3 +19,9 @@ resend==0.7.0
 sentry-sdk[fastapi]==2.1.1
 pytest==8.2.0
 pytest-asyncio==0.23.6
+
+# ── Expanded scan engine dependencies ──
+sslyze==6.0.2
+python-nmap==0.7.1
+dnstwist==20240812
+shodan==1.31.0

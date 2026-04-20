@@ -25,6 +25,15 @@ class Settings(BaseSettings):
     SCAN_CACHE_HOURS: int = 6
     SENTRY_DSN: str | None = None
 
+    # ── Expanded scan engine API keys ──
+    VIRUSTOTAL_API_KEY: str | None = None
+    GOOGLE_SAFE_BROWSING_KEY: str | None = None
+    URLSCAN_API_KEY: str | None = None
+    LEAKIX_API_KEY: str | None = None
+    WPSCAN_API_TOKEN: str | None = None
+    ABUSEIPDB_API_KEY: str | None = None
+    NUCLEI_TEMPLATES_PATH: str = "/opt/nuclei-templates"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

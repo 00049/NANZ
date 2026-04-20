@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.db.session import get_db
 from app.models import Report, Scan
-from app.schemas.report import ReportResponse, ReportEmailRequest
+from app.schemas.report import ReportResponse, ReportEmailRequest, FreePreviewResponse, RiskItem
 from app.utils.auth import verify_report_token
 
 try:
@@ -31,12 +31,12 @@ async def get_report(scan_id: UUID, payload: dict = Depends(get_current_token_pa
     """Return the full paid report for a scan."""
     if payload.get("scan_id") != str(scan_id):
         raise HTTPException(status_code=403, detail="Token not valid for this scan")
-        
+
     result = await db.execute(select(Report).where(Report.scan_id == scan_id))
     report = result.scalars().first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-        
+
     return report
 
 
