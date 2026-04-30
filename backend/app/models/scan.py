@@ -15,7 +15,8 @@ class Scan(Base):
         primary_key=True,
         server_default=text("gen_random_uuid()")
     )
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    domain_id = Column(UUID(as_uuid=True), ForeignKey("domains.id", ondelete="SET NULL"), nullable=True, index=True)
     url = Column(Text, nullable=False)
     domain = Column(String(255), nullable=False)
     ip_address = Column(String(45), nullable=True)

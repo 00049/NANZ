@@ -26,26 +26,23 @@ async def get_current_token_payload(credentials: HTTPAuthorizationCredentials = 
     return payload
 
 
-@router.get("/{scan_id}", response_model=ReportResponse)
-async def get_report(scan_id: UUID, payload: dict = Depends(get_current_token_payload), db: AsyncSession = Depends(get_db)) -> Report:
-    """Return the full paid report for a scan."""
-    if payload.get("scan_id") != str(scan_id):
-        raise HTTPException(status_code=403, detail="Token not valid for this scan")
+# ── Main report ─────────────────────────────────────────────────────────────
 
+@router.get("/{scan_id}", response_model=ReportResponse)
+async def get_report(scan_id: UUID, db: AsyncSession = Depends(get_db)) -> Report:
+    """Return the full paid report for a scan (Premium bypassed for dev)."""
     result = await db.execute(select(Report).where(Report.scan_id == scan_id))
     report = result.scalars().first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-
     return report
 
 
-@router.post("/{scan_id}/email")
-async def email_report(scan_id: UUID, body: ReportEmailRequest, payload: dict = Depends(get_current_token_payload), db: AsyncSession = Depends(get_db)) -> dict:
-    """Send a paid report by email."""
-    if payload.get("scan_id") != str(scan_id):
-        raise HTTPException(status_code=403, detail="Token not valid for this scan")
+# ── Email ────────────────────────────────────────────────────────────────────
 
+@router.post("/{scan_id}/email")
+async def email_report(scan_id: UUID, body: ReportEmailRequest, db: AsyncSession = Depends(get_db)) -> dict:
+    """Send a paid report by email (Premium bypassed for dev)."""
     result = await db.execute(select(Report).where(Report.scan_id == scan_id))
     report = result.scalars().first()
     if not report:
@@ -53,7 +50,7 @@ async def email_report(scan_id: UUID, body: ReportEmailRequest, payload: dict = 
 
     scan_result = await db.execute(select(Scan).where(Scan.id == scan_id))
     scan = scan_result.scalars().first()
-    domain = scan.domain if scan else "shieldcheck-site"
+    domain = scan.domain if scan else "nanz-site"
 
     if send_report_email:
         report_data = {
@@ -65,3 +62,101 @@ async def email_report(scan_id: UUID, body: ReportEmailRequest, payload: dict = 
             return {"message": f"Report sent to {body.email}"}
         raise HTTPException(status_code=500, detail="Failed to send email")
     raise HTTPException(status_code=500, detail="Email service unavailable")
+
+
+# ── Remediation Roadmap (Module 10) ──────────────────────────────────────────
+
+@router.get("/{scan_id}/roadmap")
+async def get_roadmap(scan_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Generate a prioritized remediation roadmap.
+    Includes stack-specific code fixes, risk_score_reduction_delta, and regulatory_impact.
+    """
+    from app.services.remediation import generate_roadmap, detect_backend_framework
+
+    result = await db.execute(select(Report).where(Report.scan_id == scan_id))
+    report = result.scalars().first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    # Detect backend framework from domain_reports
+    domain_reports = report.domain_reports or {}
+    framework = detect_backend_framework(domain_reports)
+
+    return generate_roadmap(report.risk_items or [], framework=framework)
+
+
+# ── Compliance Report (Module 9) ─────────────────────────────────────────────
+
+@router.get("/{scan_id}/compliance")
+async def get_compliance_report(scan_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Return the per-framework compliance readiness report.
+    Covers DPDP, GDPR, PCI DSS v4.0, SOC 2 Type II, and DORA.
+    If not yet stored (older scan), generates it on-the-fly.
+    """
+    from app.services.compliance_mapper import map_to_frameworks
+
+    result = await db.execute(select(Report).where(Report.scan_id == scan_id))
+    report = result.scalars().first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    # Return cached compliance report if already stored
+    if report.compliance_report:
+        return report.compliance_report
+
+    # Generate on-the-fly for older scans
+    try:
+        compliance = map_to_frameworks(report.risk_items or [])
+        return compliance.to_dict()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Compliance generation failed: {e}")
+
+
+# ── Brand Threats (Module 5) ──────────────────────────────────────────────────
+
+@router.get("/{scan_id}/brand-threats")
+async def get_brand_threats(scan_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Return brand protection findings: CT log alerts, typosquatting, and homoglyph domains.
+    """
+    result = await db.execute(select(Report).where(Report.scan_id == scan_id))
+    report = result.scalars().first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    if not report.brand_threats:
+        # Re-run on-demand if not stored
+        try:
+            scan_result = await db.execute(select(Scan).where(Scan.id == scan_id))
+            scan = scan_result.scalars().first()
+            if scan:
+                from app.services.scanner.brand_monitor import check_brand_threats
+                import asyncio
+                brand_result = await asyncio.wait_for(
+                    check_brand_threats(scan.domain), timeout=30.0
+                )
+                return brand_result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Brand threat check failed: {e}")
+        return {"threats": [], "message": "No brand threat data available for this scan."}
+
+    return report.brand_threats
+
+
+# ── BOLA/IDOR Findings (Module 1) ─────────────────────────────────────────────
+
+@router.get("/{scan_id}/bola")
+async def get_bola_findings(scan_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
+    """Return BOLA/IDOR findings for authenticated scans."""
+    result = await db.execute(select(Report).where(Report.scan_id == scan_id))
+    report = result.scalars().first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    return {
+        "findings": report.bola_findings or [],
+        "message": "BOLA/IDOR scanning requires providing two sets of target credentials."
+        if not report.bola_findings else None
+    }

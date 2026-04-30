@@ -1,19 +1,14 @@
 """
-Expanded Scan Orchestrator — runs all 8 security domains concurrently.
+Expanded Scan Orchestrator v2 — runs all 15 check modules with WAF context sharing.
 
-Domains:
-1. SSL/TLS Deep Analysis (SSLyze)
-2. HTTP Security Headers (expanded 13+ headers)
-3. DNS Security (SPF/DMARC/DKIM/DNSSEC/CAA/zone transfer/typosquatting)
-4. Port & Service Scanning (Shodan → Nmap → direct)
-5. Web Application Security (Mozilla Observatory + Nuclei + WhatWeb + sensitive files)
-6. Reputation & Threat Intel (VirusTotal + Google Safe Browsing + URLScan + LeakIX)
-7. CMS & Software Vulnerabilities (WPScan + multi-CMS detection)
-8. Subdomain & Infrastructure (Subfinder + dnstwist + IP reputation)
+Modules (15 total):
+  Phase 1 (pre-scan):  waf_check (result shared with classifier)
+  Phase 2 (parallel):  ssl, headers, dns, ports, breach, cms, cookies,
+                        webapp, reputation, infra, javascript, cors,
+                        http_methods, cloud_exposure
 
-Plus existing: Breach check, Cookie check
-
-All checks remain PASSIVE — no active exploitation, no payload injection.
+Weighted scoring with exploitability multipliers.
+Industry benchmark comparison.
 """
 
 import asyncio
@@ -26,10 +21,17 @@ from dataclasses import asdict
 from app.services.scanner import (
     ssl_check, headers_check, dns_check, port_check,
     breach_check, cms_check, cookie_check,
+    webapp_check, reputation_check, infra_check,
+    waf_check, javascript_check, cors_check,
+    http_methods_check, cloud_exposure_check,
+    email_security_check, performance_check,
+    tech_inventory, crawl_intelligence
 )
-from app.services.scanner import webapp_check, reputation_check, infra_check
+from app.services.cve_intelligence import map_cves
 from app.services.classifier import classify_findings
 from app.services.ai_translator import translate_to_plain_english, generate_executive_summary
+from app.services.benchmark import get_benchmark
+from app.services.compliance_mapper import map_to_frameworks
 from app.db.session import async_session_maker
 from app.models import Report, Scan
 from app.config import settings
@@ -37,10 +39,82 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+import logging
 logger = logging.getLogger(__name__)
 
-# Total number of check domains
-TOTAL_CHECK_DOMAINS = 10  # 8 new domains + breach + cookies
+TOTAL_CHECK_DOMAINS = 20
+
+# ── New dynamic scoring: R = (CVSS × EM × VF) − MF ──
+#
+# EM  = Exploitability Multiplier
+# VF  = Visibility Factor (1.0 production, 0.6 subdomain, 0.3 internal)
+# MF  = Mitigation Factor (deducted for WAF, HSTS, CDN)
+
+# Exploitability multipliers (EM) per finding key
+EXPLOITABILITY_MULTIPLIERS: dict[str, float] = {
+    # Credential/secret exposure — maximum exploitability
+    "webapp_exposed_.env": 2.0,
+    "webapp_exposed_.git_config": 2.0,
+    "aws_key_in_source": 2.0,
+    "cms_api_keys_exposed": 1.8,
+    # Direct access to data
+    "ports_database_exposed": 2.0,
+    "public_cloud_bucket": 2.0,
+    "dns_zone_transfer": 2.0,
+    # Auth / session compromise
+    "cors_credentials_wildcard": 2.0,
+    "trace_with_reflection": 1.8,
+    "webapp_sql_injection": 2.0,
+    # Proof-confirmed findings get 1.5x bonus (set dynamically)
+    # _PROOF_CONFIRMED_ -> 1.5x (applied in scoring loop)
+    # Network exposure
+    "headers_no_https_redirect": 1.5,
+    "rep_google_unsafe": 1.5,
+    "dangerous_ports_exposed": 1.5,
+    # Standard findings
+    "dns_no_dmarc": 0.8,
+    "dns_dmarc_not_enforced": 0.8,
+    "dns_no_spf": 0.8,
+    "cms_admin_exposed": 0.7,
+    "headers_many_missing": 0.6,
+    "headers_some_missing": 0.6,
+    "headers_one_missing": 0.5,
+    "cors_wildcard_html": 0.5,
+    "debug_code_in_production": 0.5,
+    # Theoretical / low-reachability CVEs get 0.75x (applied dynamically)
+}
+
+# Default CVSS-equivalent base scores for our severity levels
+SEVERITY_TO_CVSS: dict[str, float] = {
+    "CRITICAL": 9.5,
+    "RED":      7.5,
+    "AMBER":    5.0,
+    "GREEN":    1.0,
+    "INFO":     0.5,
+}
+
+# Mitigation factors (MF) — subtracted from each finding's R score
+MITIGATION_FACTORS = {
+    "waf_strong": 1.5,    # Strong WAF (Cloudflare, Akamai, etc.)
+    "hsts_enforced": 0.5, # HSTS header present
+    "cdn_present": 1.0,   # CDN with security policy detected
+}
+
+# Severity weight caps
+SEVERITY_WEIGHTS = {
+    "CRITICAL": {"points": 25, "max_count": 3},
+    "RED": {"points": 10, "max_count": 4},
+    "AMBER": {"points": 5, "max_count": 6},
+    "GREEN": {"bonus": 2, "max_count": 10},
+}
+
+# WAF-mitigated header finding keys
+WAF_MITIGATED_KEYS = {
+    "headers_some_missing", "headers_one_missing", "headers_many_missing",
+    "headers_server_version_exposed", "headers_tech_stack_exposed",
+}
+
+STRONG_WAF_PROVIDERS = {"Cloudflare", "AWS CloudFront", "Akamai", "Imperva", "Sucuri", "Azure Front Door"}
 
 
 def _json_safe(value: object) -> object:
@@ -58,38 +132,116 @@ def _json_safe(value: object) -> object:
     return value
 
 
-def _calculate_security_score(raw_findings: dict, classified: list) -> int:
-    """Calculate 0-100 overall security score based on findings."""
-    # Start at 100, deduct for findings
-    score = 100
+def _calculate_weighted_score(classified: list, raw_findings: dict, waf_result=None) -> tuple[int, dict]:
+    """
+    New Dynamic Risk Scoring Formula: R = (CVSS × EM × VF) − MF
+
+    CVSS = Severity-mapped base score (0-10)
+    EM   = Exploitability Multiplier (0.5–2.0)
+    VF   = Visibility Factor (1.0 production, 0.6 subdomain, 0.3 internal)
+    MF   = Mitigation Factor (WAF, HSTS, CDN deductions)
+
+    All per-finding R scores are summed and normalized to a 0–100 posture score.
+    Returns (score_0_to_100, breakdown_dict).
+    """
+    breakdown = {"deductions": {}, "bonuses": {}, "base": 100, "formula": "R = (CVSS × EM × VF) − MF"}
+
+    # ── Determine Mitigation Factor ──
+    mf_total = 0.0
+    headers_data = raw_findings.get("headers", {}).get("data", {})
+    dns_data = raw_findings.get("dns", {}).get("data", {})
+
+    is_strong_waf = False
+    if waf_result and waf_result.get("waf_detected"):
+        provider = waf_result.get("waf_provider", "")
+        if provider in STRONG_WAF_PROVIDERS:
+            mf_total += MITIGATION_FACTORS["waf_strong"]
+            breakdown["bonuses"]["waf_strong"] = MITIGATION_FACTORS["waf_strong"]
+            is_strong_waf = True
+        else:
+            mf_total += 0.5
+            breakdown["bonuses"]["cdn_detected"] = 0.5
+
+    if isinstance(headers_data, dict):
+        redirect_info = headers_data.get("redirect_info", {})
+        if isinstance(redirect_info, dict) and redirect_info.get("http_to_https"):
+            mf_total += MITIGATION_FACTORS["hsts_enforced"]
+            breakdown["bonuses"]["https_enforced"] = MITIGATION_FACTORS["hsts_enforced"]
+
+    # ── Visibility Factor: treat as production (1.0) by default ──
+    vf = 1.0
+
+    # ── Sum finding risk scores ──
+    total_risk = 0.0
+    max_possible_risk = 0.0
 
     for finding in classified:
         severity = finding.get("severity", "INFO")
-        if severity == "CRITICAL":
-            score -= 15
-        elif severity == "RED":
-            score -= 8
-        elif severity == "AMBER":
-            score -= 3
-        elif severity == "GREEN":
-            score -= 1
+        key = finding.get("key", "")
 
-    # Bonus from header score if available
-    headers_data = raw_findings.get("headers", {}).get("data", {})
-    if isinstance(headers_data, dict):
-        header_score = headers_data.get("score", 0)
-        if header_score >= 80:
-            score += 5
+        cvss = SEVERITY_TO_CVSS.get(severity, 0.5)
+        em = EXPLOITABILITY_MULTIPLIERS.get(key, 1.0)
 
-    return max(0, min(100, score))
+        # Proof-confirmed findings get 1.5x EM boost
+        if finding.get("proof_confirmed"):
+            em = min(em * 1.5, 2.5)
+
+        # WAF mitigates header findings for strong providers
+        if is_strong_waf and key in WAF_MITIGATED_KEYS:
+            em *= 0.5
+
+        # Theoretical CVEs (not reachable) get 0.75x
+        if finding.get("reachability") == "theoretical":
+            em *= 0.75
+
+        r = max(0.0, (cvss * em * vf) - mf_total)
+        finding["risk_score"] = round(r, 2)  # annotate finding in-place
+
+        total_risk += r
+        max_possible_risk += SEVERITY_TO_CVSS.get("CRITICAL", 9.5) * 2.0 * vf
+
+        if r > 0:
+            breakdown["deductions"][key] = round(r, 2)
+
+    # ── Bonus for good security practices ──
+    bonus_total = 0.0
+    if isinstance(dns_data, dict):
+        dmarc = dns_data.get("dmarc", {})
+        if isinstance(dmarc, dict) and dmarc.get("policy") in ("reject", "quarantine"):
+            bonus_total += 5
+            breakdown["bonuses"]["dmarc_enforced"] = 5
+        if dns_data.get("dnssec_enabled"):
+            bonus_total += 3
+            breakdown["bonuses"]["dnssec"] = 3
+        if dns_data.get("caa_records"):
+            bonus_total += 2
+            breakdown["bonuses"]["caa_present"] = 2
+
+    ports_data = raw_findings.get("ports", {}).get("data", {})
+    if isinstance(ports_data, dict):
+        if not ports_data.get("critical_ports_exposed") and not ports_data.get("dangerous_ports"):
+            bonus_total += 5
+            breakdown["bonuses"]["no_dangerous_ports"] = 5
+
+    breakdown["total_bonus"] = min(int(bonus_total), 25)
+
+    # ── Normalize to 0–100 ──
+    if max_possible_risk > 0:
+        denominator = max(max_possible_risk * 0.5, 100.0)
+        risk_ratio = min(total_risk / denominator, 1.0)
+    else:
+        risk_ratio = 0.0
+
+    raw_score = 100.0 - (risk_ratio * 100.0) + bonus_total
+    final_score = max(5, min(98, int(round(raw_score))))
+    return final_score, breakdown
 
 
 def _calculate_dpdp_compliance(raw_findings: dict, classified: list) -> tuple[int, list[str]]:
-    """Calculate DPDP (Digital Personal Data Protection) compliance score."""
+    """Calculate DPDP compliance score."""
     score = 100
     issues: list[str] = []
 
-    # Check SSL
     ssl_data = raw_findings.get("ssl", {}).get("data", {})
     if isinstance(ssl_data, dict):
         if not ssl_data.get("valid"):
@@ -99,7 +251,6 @@ def _calculate_dpdp_compliance(raw_findings: dict, classified: list) -> tuple[in
             score -= 10
             issues.append("Outdated encryption protocols in use — does not meet data protection standards")
 
-    # Check headers
     headers_data = raw_findings.get("headers", {}).get("data", {})
     if isinstance(headers_data, dict):
         redirect_info = headers_data.get("redirect_info", {})
@@ -107,7 +258,6 @@ def _calculate_dpdp_compliance(raw_findings: dict, classified: list) -> tuple[in
             score -= 15
             issues.append("No forced encryption — visitors can access site without data protection")
 
-    # Check for exposed data
     webapp_data = raw_findings.get("webapp", {}).get("data", {})
     if isinstance(webapp_data, dict):
         exposed = webapp_data.get("exposed_files", [])
@@ -115,7 +265,6 @@ def _calculate_dpdp_compliance(raw_findings: dict, classified: list) -> tuple[in
             score -= 20
             issues.append("Sensitive configuration files are publicly accessible — potential personal data exposure")
 
-    # Check ports
     ports_data = raw_findings.get("ports", {}).get("data", {})
     if isinstance(ports_data, dict):
         critical_ports = ports_data.get("critical_ports_exposed", [])
@@ -123,36 +272,38 @@ def _calculate_dpdp_compliance(raw_findings: dict, classified: list) -> tuple[in
             score -= 25
             issues.append("Database ports exposed to internet — personal data at risk of unauthorized access")
 
-    # Check reputation
-    rep_data = raw_findings.get("reputation", {}).get("data", {})
-    if isinstance(rep_data, dict):
-        if rep_data.get("is_flagged_malicious"):
+    # Cloud buckets
+    cloud_data = raw_findings.get("cloud", {}).get("data", {})
+    if isinstance(cloud_data, dict):
+        if cloud_data.get("public_buckets"):
             score -= 20
-            issues.append("Domain flagged as malicious — may be compromised or serving harmful content")
+            issues.append("Cloud storage buckets are publicly accessible — potential data exposure")
+
+    # CORS
+    cors_data = raw_findings.get("cors", {}).get("data", {})
+    if isinstance(cors_data, dict):
+        if cors_data.get("credentials_with_wildcard"):
+            score -= 15
+            issues.append("Cross-origin security misconfiguration allows unauthorized data access")
 
     return max(0, min(100, score)), issues
 
 
 async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
-    """
-    Orchestrate the running of all 10 check modules concurrently.
-    """
-    logger.info(f"Starting expanded orchestration for scan_id={scan_id}, url={url}")
+    """Orchestrate all 15 check modules with WAF context sharing."""
+    logger.info(f"Starting v2 orchestration for scan_id={scan_id}, url={url}")
     start_time = datetime.now(timezone.utc)
 
     try:
         async with async_session_maker() as db:
             result = await db.execute(select(Scan).where(Scan.id == scan_id))
             scan = result.scalars().first()
-
             if not scan:
                 logger.error(f"Scan {scan_id} not found in DB.")
                 return
-
             await db.refresh(scan)
             scan.status = "running"
             await db.commit()
-
             domain = scan.domain
             ip_address = scan.ip_address
     except SQLAlchemyError as e:
@@ -164,21 +315,22 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
     cache_key = f"scan:url:{url_hash}"
 
     check_names = [
-        "ssl_check", "headers_check", "dns_check", "port_check",
-        "breach_check", "cms_check", "cookie_check",
-        "webapp_check", "reputation_check", "infra_check",
+        "waf_check", "ssl_check", "headers_check", "dns_check", "port_check",
+        "breach_check", "cms_check", "cookie_check", "webapp_check",
+        "reputation_check", "infra_check", "javascript_check", "cors_check",
+        "http_methods_check", "cloud_exposure_check",
+        "email_security_check", "performance_check", "tech_inventory", "crawl_intelligence"
     ]
-
     progress = {name: "pending" for name in check_names}
 
     try:
         await redis_client.set(progress_key, json.dumps(progress), ex=3600)
-    except (ConnectionError, TimeoutError, OSError, ValueError) as e:
-        logger.error(f"Redis error setting scan_id={scan_id} progress: {e}", exc_info=True)
+    except (ConnectionError, TimeoutError, OSError, ValueError):
+        pass
 
     try:
-        async def wrap_check(name: str, coroutine: asyncio.Future) -> dict:
-            """Run a scanner coroutine with timeout, progress, and safe fallback data."""
+        async def wrap_check(name: str, coroutine, fallback_factory) -> dict:
+            """Run a scanner coroutine with timeout, progress, and safe fallback."""
             check_start = datetime.now(timezone.utc)
             try:
                 progress[name] = "running"
@@ -187,87 +339,130 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                 except (ConnectionError, TimeoutError, OSError, ValueError):
                     pass
 
-                # Longer timeout for expanded checks
-                timeout = 30.0 if name in ("webapp_check", "infra_check", "cms_check") else 15.0
+                timeout_map = {
+                    "webapp_check": 45.0, 
+                    "infra_check": 45.0, 
+                    "cms_check": 45.0,
+                    "javascript_check": 30.0, 
+                    "cloud_exposure_check": 60.0,
+                    "cors_check": 20.0,
+                    "dns_check": 60.0,
+                    "port_check": 90.0,
+                    "email_security_check": 60.0,
+                    "tech_inventory": 45.0,
+                    "crawl_intelligence": 60.0,
+                    "ssl_check": 60.0,
+                    "performance_check": 30.0,
+                }
+                timeout = timeout_map.get(name, 30.0)
                 res = await asyncio.wait_for(coroutine, timeout=timeout)
                 progress[name] = "complete"
-
-                check_duration = int((datetime.now(timezone.utc) - check_start).total_seconds() * 1000)
-                logger.info(f"Scan {scan_id} module {name} completed in {check_duration}ms")
-
+                ms = int((datetime.now(timezone.utc) - check_start).total_seconds() * 1000)
+                logger.info(f"Scan {scan_id} module {name} completed in {ms}ms")
                 return {"status": "success", "data": _json_safe(asdict(res)), "error": None}
             except Exception as e:
-                check_duration = int((datetime.now(timezone.utc) - check_start).total_seconds() * 1000)
-                logger.error(f"Scan {scan_id} module {name} failed in {check_duration}ms: {e}", exc_info=True)
+                ms = int((datetime.now(timezone.utc) - check_start).total_seconds() * 1000)
+                logger.error(f"Scan {scan_id} module {name} failed in {ms}ms: {e}", exc_info=True)
                 progress[name] = "failed"
-
-                # Safe fallback data for each check type
-                fallback_map = {
-                    "ssl_check": asdict(ssl_check.SSLResult(error="SSL check unavailable")),
-                    "headers_check": asdict(headers_check.HeadersResult(error="Header check unavailable")),
-                    "dns_check": asdict(dns_check.DNSResult(error="DNS check unavailable")),
-                    "port_check": asdict(port_check.PortResult(error="Port check unavailable")),
-                    "breach_check": asdict(breach_check.BreachResult(error="Breach check unavailable")),
-                    "cms_check": asdict(cms_check.CMSResult(error="CMS check unavailable")),
-                    "cookie_check": asdict(cookie_check.CookieResult(error="Cookie check unavailable")),
-                    "webapp_check": asdict(webapp_check.WebAppResult(error="WebApp check unavailable")),
-                    "reputation_check": asdict(reputation_check.ReputationResult(error="Reputation check unavailable")),
-                    "infra_check": asdict(infra_check.InfraResult(error="Infra check unavailable")),
-                }
-                raw_data = fallback_map.get(name)
-                return {"status": "error", "data": raw_data, "error": "Check failed"}
+                return {"status": "error", "data": _json_safe(asdict(fallback_factory())), "error": str(e)[:200]}
             finally:
                 try:
                     await redis_client.set(progress_key, json.dumps(progress), ex=3600)
                 except (ConnectionError, TimeoutError, OSError, ValueError):
                     pass
 
-        # ── Run all 10 checks concurrently ──
+        # ── Phase 1: WAF check (runs first, result shared) ──
+        waf_raw = await wrap_check(
+            "waf_check",
+            waf_check.run(url, domain, ip_address),
+            lambda: waf_check.WAFResult(error="WAF check unavailable"),
+        )
+        waf_data = waf_raw.get("data", {})
+
+        # ── Phase 2: All other checks in parallel ──
         results = await asyncio.gather(
-            wrap_check("ssl_check", ssl_check.run(domain)),
-            wrap_check("headers_check", headers_check.run(url)),
-            wrap_check("dns_check", dns_check.run(domain)),
-            wrap_check("port_check", port_check.run(ip_address or "", redis_client)),
-            wrap_check("breach_check", breach_check.run(domain)),
-            wrap_check("cms_check", cms_check.run(url)),
-            wrap_check("cookie_check", cookie_check.run(url)),
-            wrap_check("webapp_check", webapp_check.run(url, domain)),
-            wrap_check("reputation_check", reputation_check.run(domain)),
-            wrap_check("infra_check", infra_check.run(domain, ip_address)),
+            wrap_check("ssl_check", ssl_check.run(domain), lambda: ssl_check.SSLResult(error="unavailable")),
+            wrap_check("headers_check", headers_check.run(url), lambda: headers_check.HeadersResult(error="unavailable")),
+            wrap_check("dns_check", dns_check.run(domain), lambda: dns_check.DNSResult(error="unavailable")),
+            wrap_check("port_check", port_check.run(ip_address or "", redis_client), lambda: port_check.PortResult(error="unavailable")),
+            wrap_check("breach_check", breach_check.run(domain), lambda: breach_check.BreachResult(error="unavailable")),
+            wrap_check("cms_check", cms_check.run(url), lambda: cms_check.CMSResult(error="unavailable")),
+            wrap_check("cookie_check", cookie_check.run(url), lambda: cookie_check.CookieResult(error="unavailable")),
+            wrap_check("webapp_check", webapp_check.run(url, domain), lambda: webapp_check.WebAppResult(error="unavailable")),
+            wrap_check("reputation_check", reputation_check.run(domain), lambda: reputation_check.ReputationResult(error="unavailable")),
+            wrap_check("infra_check", infra_check.run(domain, ip_address), lambda: infra_check.InfraResult(error="unavailable")),
+            wrap_check("javascript_check", javascript_check.run(url, domain), lambda: javascript_check.JavaScriptResult(error="unavailable")),
+            wrap_check("cors_check", cors_check.run(url), lambda: cors_check.CORSResult(error="unavailable")),
+            wrap_check("http_methods_check", http_methods_check.run(url), lambda: http_methods_check.HTTPMethodsResult(error="unavailable")),
+            wrap_check("cloud_exposure_check", cloud_exposure_check.run(domain), lambda: cloud_exposure_check.CloudResult(error="unavailable")),
+            wrap_check("email_security_check", email_security_check.run(domain), lambda: email_security_check.EmailSecurityResult(0, "F", "", "", False, False, False, False, {}, error="unavailable")),
+            wrap_check("performance_check", performance_check.run(domain), lambda: performance_check.PerformanceResult(error="unavailable")),
+            wrap_check("tech_inventory", tech_inventory.run(domain), lambda: tech_inventory.TechInventoryResult(error="unavailable")),
+            wrap_check("crawl_intelligence", crawl_intelligence.run(domain), lambda: crawl_intelligence.CrawlResult(error="unavailable")),
             return_exceptions=True,
         )
 
-        # ── Map results to domain keys ──
+        # ── Map results ──
         domain_keys = [
-            "ssl", "headers", "dns", "ports", "breach",
-            "cms", "cookies", "webapp", "reputation", "infra",
+            "ssl", "headers", "dns", "ports", "breach", "cms", "cookies",
+            "webapp", "reputation", "infra", "javascript", "cors",
+            "http_methods", "cloud", "email", "performance", "tech", "crawl"
         ]
 
-        raw_findings = {}
+        raw_findings = {"waf": waf_raw}
         for idx, key in enumerate(domain_keys):
             if isinstance(results[idx], Exception):
                 raw_findings[key] = {"status": "error", "error": "Fatal Error"}
             else:
                 raw_findings[key] = results[idx]
+                
+        # ── Phase 3: CVE Intelligence ──
+        if "tech" in raw_findings and raw_findings["tech"].get("status") == "success":
+            tech_data = raw_findings["tech"].get("data", {})
+            technologies = tech_data.get("technologies", [])
+            if technologies:
+                try:
+                    cve_results = await map_cves(technologies)
+                    raw_findings["cve"] = {"status": "success", "data": _json_safe({k: asdict(v) for k, v in cve_results.items()})}
+                except Exception as e:
+                    logger.warning(f"CVE intelligence failed for {domain}: {e}")
+                    raw_findings["cve"] = {"status": "error", "error": str(e)}
 
         all_failed = all(
             res.get("status") == "error"
-            for res in raw_findings.values()
-            if isinstance(res, dict)
+            for key, res in raw_findings.items()
+            if isinstance(res, dict) and key != "waf"
         )
 
-        # ── Classify findings ──
+        # ── Classify findings with WAF context ──
         classifier_data = {k: v.get("data", {}) for k, v in raw_findings.items()}
-        classified = classify_findings(classifier_data)
+        classified = classify_findings(classifier_data, waf_context=waf_data)
+
+        # ── Compliance mapping (runs on classified list which always has 'key') ──
+        try:
+            compliance_result = map_to_frameworks(classified)
+            compliance_report_dict = _json_safe(compliance_result.to_dict())
+        except Exception as e:
+            logger.warning(f"Compliance mapping failed for {domain}: {e}")
+            compliance_report_dict = None
+
+        # ── Weighted score ──
+        overall_score, score_breakdown = _calculate_weighted_score(classified, raw_findings, waf_data)
 
         # ── AI translate ──
         ai_items = await translate_to_plain_english(classified, domain)
-        ai_items_dict = [item.model_dump() for item in ai_items]
+        ai_items_dict = []
+        for i, item in enumerate(ai_items):
+            d = item.model_dump()
+            if i < len(classified):
+                d["risk_score"] = classified[i].get("risk_score")
+                d["compliance_violations"] = classified[i].get("compliance_violations", [])
+            ai_items_dict.append(d)
 
-        # ── Generate executive summary ──
+        # ── Executive summary ──
         exec_summary = await generate_executive_summary(classified, domain)
 
-        # ── Calculate overall severity ──
+        # ── Overall severity ──
         overall_severity = "GREEN"
         if any(item.severity == "CRITICAL" for item in ai_items):
             overall_severity = "CRITICAL"
@@ -276,43 +471,42 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
         elif any(item.severity == "AMBER" for item in ai_items):
             overall_severity = "AMBER"
 
-        # ── Calculate security score ──
-        overall_score = _calculate_security_score(raw_findings, classified)
-
-        # ── Calculate DPDP compliance ──
+        # ── DPDP compliance ──
         dpdp_score, dpdp_issues = _calculate_dpdp_compliance(raw_findings, classified)
 
-        # ── Count findings by severity ──
+        # ── Industry benchmark ──
+        benchmark = get_benchmark(domain, overall_score)
+
+        # ── Counts ──
         critical_count = sum(1 for f in classified if f.get("severity") == "CRITICAL")
         high_count = sum(1 for f in classified if f.get("severity") == "RED")
         medium_count = sum(1 for f in classified if f.get("severity") == "AMBER")
         low_count = sum(1 for f in classified if f.get("severity") == "GREEN")
         info_count = sum(1 for f in classified if f.get("severity") == "INFO")
 
-        # ── Build domain-specific reports ──
+        # ── Domain reports ──
         domain_reports = {}
-        for key in domain_keys:
+        for key in list(domain_keys) + ["waf"]:
             finding_data = raw_findings.get(key, {})
             if isinstance(finding_data, dict):
                 domain_reports[key] = finding_data.get("data", {})
+        
+        domain_reports["score_breakdown"] = score_breakdown
+        domain_reports["industry_benchmark"] = benchmark
 
         end_time = datetime.now(timezone.utc)
         duration_ms = int((end_time - start_time).total_seconds() * 1000)
 
-        # ── Persist to database ──
+        # ── Persist ──
         async with async_session_maker() as db:
             result = await db.execute(select(Scan).where(Scan.id == scan_id))
             scan = result.scalars().first()
             if scan:
                 scan.raw_findings = raw_findings
                 scan.scan_duration_ms = duration_ms
-
+                scan.status = "failed" if all_failed else "complete"
                 if all_failed:
-                    scan.status = "failed"
                     scan.error_message = "All scanning checks failed."
-                else:
-                    scan.status = "complete"
-
                 scan.completed_at = end_time
 
                 if not all_failed:
@@ -335,21 +529,38 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                         info_count=info_count,
                         dpdp_compliance_score=dpdp_score,
                         dpdp_issues=dpdp_issues,
+                        waf_detected=waf_data.get("waf_detected", False),
+                        waf_provider=waf_data.get("waf_provider"),
+                        javascript_findings=domain_reports.get("javascript"),
+                        cors_findings=domain_reports.get("cors"),
+                        cloud_findings=domain_reports.get("cloud"),
+                        email_findings=domain_reports.get("email"),
+                        performance_findings=domain_reports.get("performance"),
+                        tech_findings=domain_reports.get("tech"),
+                        crawl_findings=domain_reports.get("crawl"),
+                        compliance_report=compliance_report_dict,
+                        brand_threats=_json_safe(domain_reports.get("reputation", {})),
+                        bola_findings=None,
+                        api_findings=None,
+                        llm_findings=None,
+                        oast_interactions=None,
+                        cve_findings=domain_reports.get("cve")
                     )
                     db.add(report)
 
                 await db.commit()
 
-                # Cache successful scan
                 if not all_failed:
                     try:
                         await redis_client.set(cache_key, str(scan.id), ex=settings.SCAN_CACHE_HOURS * 3600)
-                    except (ConnectionError, TimeoutError, OSError, ValueError) as e:
-                        logger.error(f"Redis cache error for scan_id={scan_id}: {e}", exc_info=True)
+                    except (ConnectionError, TimeoutError, OSError, ValueError):
+                        pass
 
                 logger.info(
-                    f"Scan {scan_id} completed in {duration_ms}ms with status={scan.status}, "
-                    f"findings={len(classified)}, severity={overall_severity}, score={overall_score}"
+                    f"Scan {scan_id} completed in {duration_ms}ms: "
+                    f"status={scan.status}, findings={len(classified)}, "
+                    f"severity={overall_severity}, score={overall_score}, "
+                    f"industry={benchmark.get('industry')}, percentile={benchmark.get('percentile')}%"
                 )
 
     except Exception as e:
@@ -364,5 +575,5 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
     finally:
         try:
             await redis_client.expire(progress_key, 3600)
-        except (ConnectionError, TimeoutError, OSError, ValueError) as e:
-            logger.error(f"Failed to set scan_id={scan_id} progress TTL: {e}", exc_info=True)
+        except (ConnectionError, TimeoutError, OSError, ValueError):
+            pass

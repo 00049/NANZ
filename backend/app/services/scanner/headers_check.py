@@ -108,6 +108,7 @@ class HeadersResult:
     present: dict[str, str] = field(default_factory=dict)
     missing: list[str] = field(default_factory=list)
     score: int = 0
+    grade: str = "F"
     server_header: Optional[str] = None
     x_powered_by: Optional[str] = None
     error: Optional[str] = None
@@ -126,6 +127,14 @@ class HeadersResult:
     xss_protection_misconfigured: bool = False
     total_headers_checked: int = 0
     total_headers_passed: int = 0
+
+    # New: robots.txt, security.txt, HTTP/2
+    robots_sensitive_paths: list[str] = field(default_factory=list)
+    robots_total_disallowed: int = 0
+    has_security_txt: bool = False
+    security_txt_content: Optional[str] = None
+    http2_supported: bool = False
+    http3_supported: bool = False
 
 
 async def run(url: str) -> HeadersResult:
@@ -244,6 +253,50 @@ async def run(url: str) -> HeadersResult:
             if xss and xss.strip() != "0":
                 result.xss_protection_misconfigured = True
 
+            # ── Step 10: robots.txt analysis ──
+            try:
+                base_url = url.rstrip("/")
+                robots_res = await client.get(f"{base_url}/robots.txt", headers={"User-Agent": USER_AGENT})
+                if robots_res.status_code == 200 and "disallow" in robots_res.text.lower():
+                    sensitive_keywords = {"admin", "backup", "config", "db", ".env", "api", "internal", "private", "secret", "wp-admin", "phpmyadmin"}
+                    disallowed = []
+                    for line in robots_res.text.splitlines():
+                        line_stripped = line.strip().lower()
+                        if line_stripped.startswith("disallow:"):
+                            path = line_stripped.replace("disallow:", "").strip()
+                            if path:
+                                disallowed.append(path)
+                    result.robots_total_disallowed = len(disallowed)
+                    result.robots_sensitive_paths = [
+                        p for p in disallowed
+                        if any(kw in p.lower() for kw in sensitive_keywords)
+                    ]
+            except Exception as e:
+                logger.debug(f"robots.txt check failed: {e}")
+
+            # ── Step 11: security.txt check (RFC 9116) ──
+            try:
+                base_url = url.rstrip("/")
+                sec_res = await client.get(f"{base_url}/.well-known/security.txt", headers={"User-Agent": USER_AGENT})
+                if sec_res.status_code == 200 and ("contact:" in sec_res.text.lower() or "policy:" in sec_res.text.lower()):
+                    result.has_security_txt = True
+                    result.security_txt_content = sec_res.text[:500]
+                else:
+                    # Try root path fallback
+                    sec_res2 = await client.get(f"{base_url}/security.txt", headers={"User-Agent": USER_AGENT})
+                    if sec_res2.status_code == 200 and "contact:" in sec_res2.text.lower():
+                        result.has_security_txt = True
+                        result.security_txt_content = sec_res2.text[:500]
+            except Exception as e:
+                logger.debug(f"security.txt check failed: {e}")
+
+            # ── Step 12: HTTP/2 and HTTP/3 support ──
+            alt_svc = headers_lower.get("alt-svc", "")
+            if "h3" in alt_svc:
+                result.http3_supported = True
+            if "h2" in alt_svc or response.http_version == "HTTP/2":
+                result.http2_supported = True
+
             # ── Calculate final score ──
             # Base score from header weights
             base_score = int((earned_weight / total_weight) * 80) if total_weight > 0 else 0
@@ -258,6 +311,20 @@ async def run(url: str) -> HeadersResult:
                 bonus += 5
 
             result.score = min(100, base_score + bonus)
+            
+            # Letter grade
+            if result.score >= 95:
+                result.grade = "A+"
+            elif result.score >= 90:
+                result.grade = "A"
+            elif result.score >= 80:
+                result.grade = "B"
+            elif result.score >= 70:
+                result.grade = "C"
+            elif result.score >= 60:
+                result.grade = "D"
+            else:
+                result.grade = "F"
 
     except Exception as e:
         logger.error(f"Headers check failed for url={url}: {e}", exc_info=True)

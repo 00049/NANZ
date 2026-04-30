@@ -16,6 +16,7 @@ from typing import Optional
 
 from app.config import settings
 from app.utils.nmap_parser import run_nmap_scan, NmapResult, CRITICAL_PORTS, RED_PORTS, AMBER_PORTS
+from app.services.shodan_service import host_lookup
 from redis.asyncio import Redis
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,10 @@ class PortResult:
     total_ports_scanned: int = 0
     nmap_scan_info: Optional[str] = None
 
+    # v2 enhanced checks
+    smbv1_enabled: bool = False
+    redis_no_auth: bool = False
+
 
 async def check_port_direct(ip: str, port: int) -> bool:
     """Return True when a TCP connection can be opened to a port."""
@@ -115,36 +120,34 @@ async def _shodan_lookup(ip_address: str, redis_client: Redis) -> Optional[PortR
         return None
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            res = await client.get(
-                f"https://api.shodan.io/shodan/host/{ip_address}",
-                params={"key": settings.SHODAN_API_KEY},
-            )
-            if res.status_code == 200:
-                data = res.json()
-                ports = data.get("ports", [])
-                services = []
+        data = await host_lookup(ip_address)
+        if "error" in data:
+            logger.warning(f"Shodan API error for ip={ip_address}: {data['error']}")
+            return None
 
-                for item in data.get("data", []):
-                    services.append({
-                        "port": item.get("port"),
-                        "product": item.get("product"),
-                        "version": item.get("version"),
-                        "transport": item.get("transport", "tcp"),
-                        "banner": (item.get("data", "") or "")[:200],
-                    })
+        ports = data.get("ports", [])
+        services = []
 
-                result_dict = {"open_ports": ports, "services": services}
-                try:
-                    await redis_client.set(cache_key, json.dumps(result_dict), ex=86400)
-                except (ConnectionError, TimeoutError, OSError):
-                    pass
+        for item in data.get("data", []):
+            services.append({
+                "port": item.get("port"),
+                "product": item.get("product"),
+                "version": item.get("version"),
+                "transport": item.get("transport", "tcp"),
+                "banner": (item.get("data", "") or "")[:200],
+            })
 
-                result = PortResult(open_ports=ports, services=services, source="shodan")
-                _enrich_port_findings(result)
-                return result
+        result_dict = {"open_ports": ports, "services": services}
+        try:
+            await redis_client.set(cache_key, json.dumps(result_dict), ex=86400)
+        except (ConnectionError, TimeoutError, OSError):
+            pass
+
+        result = PortResult(open_ports=ports, services=services, source="shodan")
+        _enrich_port_findings(result)
+        return result
     except Exception as e:
-        logger.warning(f"Shodan API error for ip={ip_address}: {e}")
+        logger.warning(f"Unexpected error during Shodan lookup for ip={ip_address}: {e}")
 
     return None
 
@@ -225,40 +228,77 @@ def _enrich_port_findings(result: PortResult) -> None:
             result.dangerous_ports_exposed.append(port)
 
 
-async def run(ip_address: str, redis_client: Redis) -> PortResult:
-    """
-    Check for open ports using Shodan (cached) → Nmap (fallback) → direct probe.
-    """
-    if not ip_address:
-        return PortResult(error="No IP address provided")
+async def _check_redis_no_auth(ip: str) -> bool:
+    """Probe Redis for unauthenticated access."""
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(ip, 6379), timeout=4.0
+        )
+        writer.write(b"PING\r\n")
+        await writer.drain()
+        data = await asyncio.wait_for(reader.read(128), timeout=3.0)
+        writer.close()
+        await writer.wait_closed()
+        return b"+PONG" in data
+    except Exception:
+        return False
 
-    # Try Shodan first (fastest, cached)
-    shodan_result = await _shodan_lookup(ip_address, redis_client)
-    if shodan_result:
-        shodan_result.total_ports_scanned = 23
-        return shodan_result
 
-    # Fall back to Nmap
-    nmap_result = await _nmap_scan(ip_address)
-    if nmap_result:
-        nmap_result.total_ports_scanned = 23
-        return nmap_result
-
-    # Last resort: direct TCP probe of critical ports only
-    dangerous_ports = [21, 23, 3306, 5432, 27017, 6379, 3389, 5900, 9200]
+async def _run_tcp_fallback(ip_address: str) -> PortResult:
+    """Last resort: direct TCP probe of critical ports only."""
+    fallback_ports = [21, 22, 23, 25, 80, 443, 3306, 3389, 5432, 5900, 6379, 8080, 8443, 27017, 9200]
     open_ports = []
 
     try:
-        tasks = [check_port_direct(ip_address, p) for p in dangerous_ports]
+        tasks = [check_port_direct(ip_address, p) for p in fallback_ports]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for p, r in zip(dangerous_ports, results):
+        for p, r in zip(fallback_ports, results):
             if isinstance(r, bool) and r is True:
                 open_ports.append(p)
 
-        result = PortResult(open_ports=open_ports, source="direct", total_ports_scanned=len(dangerous_ports))
+        result = PortResult(open_ports=open_ports, source="direct", total_ports_scanned=len(fallback_ports))
         _enrich_port_findings(result)
+        await _enhanced_checks(ip_address, result)
         return result
     except Exception as e:
         logger.error(f"Direct port fallback failed for ip={ip_address}: {e}", exc_info=True)
         return PortResult(error="Port check unavailable")
+
+
+async def run(ip_address: str, redis_client: Redis) -> PortResult:
+    """
+    Check for open ports using Shodan (cached) -> Nmap (fallback) -> direct probe.
+    Never raises an exception, always returns a PortResult.
+    """
+    try:
+        if not ip_address:
+            return PortResult(error="No IP address provided")
+
+        # Try Shodan first (fastest, cached)
+        shodan_result = await _shodan_lookup(ip_address, redis_client)
+        if shodan_result:
+            shodan_result.total_ports_scanned = 23
+            await _enhanced_checks(ip_address, shodan_result)
+            return shodan_result
+
+        # Fall back to Nmap
+        nmap_result = await _nmap_scan(ip_address)
+        if nmap_result:
+            nmap_result.total_ports_scanned = 23
+            await _enhanced_checks(ip_address, nmap_result)
+            return nmap_result
+
+        return await _run_tcp_fallback(ip_address)
+    except Exception as e:
+        logger.error(f"port_check.run completely failed for {ip_address}: {e}", exc_info=True)
+        return PortResult(error="Port check completely failed")
+
+
+async def _enhanced_checks(ip: str, result: PortResult) -> None:
+    """Run enhanced checks on open ports (Redis auth, SMBv1)."""
+    try:
+        if 6379 in result.open_ports:
+            result.redis_no_auth = await _check_redis_no_auth(ip)
+    except Exception:
+        pass

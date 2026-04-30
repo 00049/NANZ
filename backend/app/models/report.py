@@ -44,5 +44,27 @@ class Report(Base):
     dpdp_compliance_score = Column(Integer, default=0)
     dpdp_issues = Column(JSONB, nullable=True)  # List of DPDP issue strings
 
+    # New v2 fields
+    waf_detected = Column(Boolean, default=False)
+    waf_provider = Column(String(50), nullable=True)
+    javascript_findings = Column(JSONB, nullable=True)
+    cors_findings = Column(JSONB, nullable=True)
+    cloud_findings = Column(JSONB, nullable=True)
+
+    # New v3 fields
+    email_findings = Column(JSONB, nullable=True)
+    performance_findings = Column(JSONB, nullable=True)
+    tech_findings = Column(JSONB, nullable=True)
+    crawl_findings = Column(JSONB, nullable=True)
+    cve_findings = Column(JSONB, nullable=True)
+
+    # v4 — Advanced module fields (Modules 1–10)
+    compliance_report = Column(JSONB, nullable=True)    # Module 9: DPDP/GDPR/PCI/SOC2/DORA
+    brand_threats = Column(JSONB, nullable=True)        # Module 5: CT log & homoglyph
+    bola_findings = Column(JSONB, nullable=True)        # Module 1: BOLA/IDOR
+    api_findings = Column(JSONB, nullable=True)         # Module 3: API/GraphQL discovery
+    llm_findings = Column(JSONB, nullable=True)         # Module 6: LLM/OWASP security
+    oast_interactions = Column(JSONB, nullable=True)    # Module 4: OAST callbacks
+
     is_paid = Column(Boolean, default=False)
     generated_at = Column(DateTime(timezone=True), server_default=text("now()"))

@@ -57,9 +57,22 @@ async def database_exception_handler(request: Request, exc: SQLAlchemyError) -> 
     logger.error(f"Database error while handling {request.url.path}: {exc}", exc_info=True)
     return JSONResponse(status_code=503, content={"detail": "Database temporarily unavailable"})
 
-origins = ["https://shieldcheck.in"]
-if settings.APP_ENV == "development":
-    origins.append("http://localhost:3000")
+origins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
+    "http://localhost:3004",
+    "http://localhost:3005",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:3002",
+    "http://127.0.0.1:3003",
+    "https://shieldcheck.in",
+    "https://www.shieldcheck.in",
+    "https://nanz.in",
+    "https://www.nanz.in",
+]
 
 app.add_middleware(
     CORSMiddleware,
@@ -88,9 +101,13 @@ async def add_security_headers(request: Request, call_next):
         )
 
 
-from app.routers import health, scans, reports, payments
+from app.routers import health, scans, reports, payments, email, auth, domains, workspaces
 
 app.include_router(health.router)
+app.include_router(auth.router, prefix="/api/auth")
+app.include_router(domains.router, prefix="/api/domains")
+app.include_router(workspaces.router, prefix="/api/workspaces")
 app.include_router(scans.router, prefix="/api/scans")
 app.include_router(reports.router, prefix="/api/reports")
 app.include_router(payments.router, prefix="/api/payments")
+app.include_router(email.router, prefix="/api/tools")

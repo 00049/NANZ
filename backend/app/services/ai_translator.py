@@ -46,9 +46,9 @@ STATIC_FALLBACKS = {
     "ssl_wildcard_cert": ("Broad Certificate Scope", "A single compromised key affects all your subdomains.", "Wildcard certificate covers *.domain — broad attack surface.", "Consider individual certificates for sensitive subdomains.", "LOW", "Medium", "1 hour"),
 
     # ── Headers (Domain 2) ──
-    "headers_many_missing": ("Missing Basic Protections", "Hackers have an easier time tricking your website into doing malicious things.", "4+ critical security headers missing from HTTP response.", "Ask your developer to add standard web security guardrails.", "HIGH", "Medium", "1 hour"),
-    "headers_some_missing": ("Incomplete Defenses", "Some pages might be vulnerable to being embedded in fake sites.", "2-3 security headers missing from HTTP response.", "Have your web team review and update your site's protection settings.", "MEDIUM", "Easy", "30 minutes"),
-    "headers_one_missing": ("Minor Defense Gap", "A small security improvement is available for your site.", "One security header missing from HTTP response.", "Add the missing security header.", "LOW", "Easy", "10 minutes"),
+    "headers_many_missing": ("{missing_count} of 13 Security Headers Missing", "Hackers have an easier time tricking your website into doing malicious things.", "4+ critical security headers missing from HTTP response.", "Ask your developer to add standard web security guardrails.", "HIGH", "Medium", "1 hour"),
+    "headers_some_missing": ("{missing_count} Security Headers Missing", "Some pages might be vulnerable to being embedded in fake sites.", "2-3 security headers missing from HTTP response.", "Have your web team review and update your site's protection settings.", "MEDIUM", "Easy", "30 minutes"),
+    "headers_one_missing": ("1 Security Header Missing", "A small security improvement is available for your site.", "One security header missing from HTTP response.", "Add the missing security header.", "LOW", "Easy", "10 minutes"),
     "headers_no_https_redirect": ("Insecure Access Available", "Visitors can access your site without encryption.", "No HTTP to HTTPS redirect configured.", "Set up automatic redirect from HTTP to HTTPS.", "HIGH", "Easy", "15 minutes"),
     "headers_server_version_exposed": ("Server Info Leaked", "Attackers can see which server software you use and find known exploits.", "Server header exposes software version information.", "Configure server to hide version information.", "MEDIUM", "Easy", "10 minutes"),
     "headers_tech_stack_exposed": ("Tech Stack Revealed", "Attackers know what technology your site uses, making targeted attacks easier.", "X-Powered-By header reveals backend technology.", "Remove X-Powered-By header from server response.", "MEDIUM", "Easy", "10 minutes"),
@@ -99,6 +99,47 @@ STATIC_FALLBACKS = {
     "infra_subdomain_takeover": ("Subdomain Hijacking Risk", "Attackers could take over unused website addresses tied to your domain.", "Subdomain(s) pointing to unclaimed third-party services.", "Remove or reclaim dangling DNS records.", "HIGH", "Medium", "30 minutes"),
     "infra_typosquatting_high": ("Phishing Domain Alert", "Many fake versions of your domain exist — scammers may be targeting your customers.", "10+ registered typosquatting domains detected.", "Monitor and consider domain name protection services.", "MEDIUM", "Hard", "ongoing"),
     "infra_ip_bad_reputation": ("Bad Server Reputation", "Your server's address has been reported for abuse or malicious activity.", "IP address has high abuse confidence score.", "Contact hosting provider or consider migrating to clean IP.", "HIGH", "Hard", "variable"),
+
+    # ── JavaScript (NEW) ──
+    "aws_key_in_source": ("Cloud Access Key Exposed in Website Code", "Your cloud infrastructure credentials are publicly readable — anyone can access or delete your cloud storage and servers.", "AWS access key (AKIA prefix) found in client-side JavaScript source code.", "Immediately revoke this key in your cloud console, then remove it from code and use environment variables instead.", "HIGH", "Medium", "30 minutes"),
+    "api_key_in_source": ("Secret Key Found in Website Code", "A secret access key is visible in your website code — attackers can use it to access your paid services.", "API key pattern detected in client-side JavaScript or HTML source.", "Remove the key from frontend code, rotate it, and move it to server-side environment variables.", "HIGH", "Medium", "30 minutes"),
+    "source_map_exposed": ("Website Source Code Readable", "Your original source code is downloadable, revealing business logic and potential vulnerabilities.", "JavaScript source map (.map) file publicly accessible — exposes unminified source.", "Delete .map files from production or restrict access via server configuration.", "HIGH", "Easy", "10 minutes"),
+    "jquery_outdated": ("Outdated Website Framework", "Your website uses an old version of a common tool with known security flaws.", "jQuery version below 3.0.0 — multiple known XSS vulnerabilities.", "Update jQuery to the latest version (3.7+).", "HIGH", "Easy", "30 minutes"),
+    "js_library_outdated": ("Outdated Code Library", "Your website uses an old library version that may have security issues.", "JavaScript library version is below recommended minimum.", "Update the library to its latest stable version.", "MEDIUM", "Easy", "30 minutes"),
+    "mixed_content_detected": ("Insecure Resources on Secure Page", "Some parts of your secure page load without encryption, weakening overall security.", "HTTP resources loaded on HTTPS page — mixed content vulnerability.", "Update all resource URLs to use secure connections.", "MEDIUM", "Easy", "20 minutes"),
+    "debug_code_in_production": ("Developer Debug Code Left In", "Debug messages in your live site can reveal internal workings to attackers.", "Excessive console.log statements found in production JavaScript.", "Remove or disable debug logging before deploying to production.", "MEDIUM", "Easy", "15 minutes"),
+
+    # ── CORS (NEW) ──
+    "cors_credentials_wildcard": ("Any Website Can Read Your Logged-In Users Data", "A malicious website can silently steal your customers data by making requests to your site while they are logged in.", "CORS policy allows any origin with credentials — Access-Control-Allow-Origin: * with credentials.", "Update your server to only allow your specific domain in cross-origin settings, not wildcard.", "HIGH", "Easy", "15 minutes"),
+    "cors_reflected_origin": ("Cross-Site Data Theft Possible", "Any website can trick your server into sharing data by pretending to be a trusted site.", "Server reflects arbitrary Origin header in ACAO — allows cross-origin data theft.", "Configure an explicit whitelist of allowed origins instead of reflecting the request origin.", "HIGH", "Easy", "15 minutes"),
+    "cors_wildcard_api": ("Data Endpoint Open to All Websites", "Your data endpoints can be read by any website, potentially exposing customer information.", "Wildcard CORS on API endpoint — any origin can read responses.", "Restrict cross-origin access to only your own domains.", "HIGH", "Easy", "15 minutes"),
+    "cors_null_origin": ("Sandbox Bypass Vulnerability", "Malicious content in embedded frames can read your website data.", "Server accepts null Origin — allows sandboxed iframe data access.", "Block null origin in your server's cross-origin configuration.", "HIGH", "Easy", "10 minutes"),
+    "cors_wildcard_html": ("Loose Cross-Site Policy", "Your website allows any other site to embed and read its content.", "Wildcard CORS on HTML page — lower risk but indicates loose policy.", "Consider restricting cross-origin access.", "MEDIUM", "Easy", "10 minutes"),
+
+    # ── HTTP Methods (NEW) ──
+    "trace_with_reflection": ("Server Echoes Back Sensitive Data", "Attackers can steal login cookies by tricking the server into echoing them back.", "TRACE method enabled with header reflection — Cross-Site Tracing (XST) confirmed.", "Disable TRACE method in your web server configuration immediately.", "HIGH", "Easy", "10 minutes"),
+    "trace_enabled": ("Debugging Protocol Left On", "A server debugging feature is active that could help attackers steal information.", "HTTP TRACE method is enabled on the server.", "Disable TRACE method in your web server configuration.", "HIGH", "Easy", "10 minutes"),
+    "dangerous_methods_enabled": ("Extra Server Commands Available", "Your server accepts commands that could be used to modify or delete content.", "Potentially dangerous HTTP methods (PUT/DELETE/CONNECT) enabled.", "Disable unnecessary HTTP methods in server configuration.", "MEDIUM", "Easy", "15 minutes"),
+
+    # ── WAF (NEW) ──
+    "waf_detected": ("Web Firewall Active", "Your website is protected by a security firewall that blocks common attacks.", "WAF/CDN detected — provides DDoS protection and attack filtering.", "Good security practice — maintain WAF configuration.", "LOW", "Easy", "N/A"),
+    "cdn_detected": ("Content Delivery Network Active", "Your website uses a content delivery network for performance and basic protection.", "CDN detected — provides caching and some security benefits.", "Good practice — CDN provides performance and basic DDoS protection.", "LOW", "Easy", "N/A"),
+
+    # ── Cloud Exposure (NEW) ──
+    "public_cloud_bucket": ("Public Cloud Storage Accessible", "Anyone on the internet can list and download all files stored in your cloud storage.", "S3/GCS/Azure bucket is publicly listable with no authentication required.", "Log into your cloud provider console and set the bucket to private immediately.", "HIGH", "Easy", "10 minutes"),
+    "enumerable_cloud_bucket": ("Cloud Storage Name Discoverable", "Attackers know your cloud storage exists, which helps them plan targeted attacks.", "Cloud bucket name matches domain pattern — access denied but existence confirmed.", "Rename bucket to non-guessable name or ensure all access policies are strict.", "MEDIUM", "Medium", "30 minutes"),
+
+    # ── Expanded Existing ──
+    "headers_robots_sensitive_paths": ("Sensitive Paths Disclosed in Robots File", "Your robots file reveals internal paths that attackers can target.", "robots.txt Disallow entries expose admin/backup/config paths.", "Review robots.txt and remove references to sensitive directories.", "MEDIUM", "Easy", "10 minutes"),
+    "headers_security_txt_present": ("Security Contact Published", "Security researchers can responsibly report issues to you.", "security.txt file present per RFC 9116.", "Good practice — maintain up-to-date security contact information.", "LOW", "Easy", "N/A"),
+    "dns_smtp_no_starttls": ("Email Sent Without Encryption", "Emails sent from your domain may be readable by anyone who intercepts them.", "Mail server does not support STARTTLS — emails transmitted in plaintext.", "Enable STARTTLS on your mail server or use a provider that supports it.", "MEDIUM", "Medium", "1 hour"),
+    "dns_bimi_present": ("Brand Email Indicator Active", "Your emails display your brand logo, increasing customer trust.", "BIMI record configured — brand indicator for email authentication.", "Good practice — maintain BIMI record.", "LOW", "Easy", "N/A"),
+    "dns_mta_sts_present": ("Strict Email Transport Active", "Your email transport is secured against downgrade attacks.", "MTA-STS policy configured — enforces encrypted email delivery.", "Good practice — maintain MTA-STS policy.", "LOW", "Easy", "N/A"),
+    "ports_smbv1_enabled": ("Critical File Sharing Vulnerability", "Your server uses an old file sharing protocol exploited by major ransomware attacks.", "SMBv1 enabled — vulnerable to EternalBlue/WannaCry exploits.", "Disable SMBv1 immediately and use SMBv3.", "HIGH", "Easy", "15 minutes"),
+    "ports_redis_no_auth": ("Database Accessible Without Password", "Your in-memory database is completely open — anyone can read, modify, or delete all data.", "Redis port 6379 exposed with no authentication configured.", "Set a strong password for Redis and firewall the port.", "HIGH", "Easy", "10 minutes"),
+    "cms_admin_no_auth": ("Admin Panel Open Without Login", "Anyone can access your website admin panel without a password.", "Admin panel accessible without authentication — no login required.", "Immediately add authentication or restrict access by IP.", "HIGH", "Easy", "15 minutes"),
+    "cms_admin_login_visible": ("Admin Login Page Publicly Visible", "Attackers know where your admin login is and can try to guess passwords.", "Admin login page publicly accessible — brute force target.", "Consider hiding admin URL or adding rate limiting.", "MEDIUM", "Medium", "30 minutes"),
+    "cms_admin_redirects": ("Admin Area Properly Protected", "Your admin area correctly requires login before access.", "Admin path redirects to authentication — properly configured.", "Good practice — admin area is protected.", "LOW", "Easy", "N/A"),
 }
 
 
@@ -219,20 +260,36 @@ def _strip_jargon(text: str) -> str:
 
 
 def _get_static_fallback(finding: Dict[str, Any]) -> RiskItem:
-    """Return deterministic fallback copy for a classified finding."""
+    """Return deterministic fallback copy for a classified finding, injecting context data."""
     key = finding.get("key", "")
     severity = finding.get("severity", "AMBER")
     check = finding.get("check", "")
+    data = finding.get("data", {})
+
+    # Auto-generate count variables for lists in data
+    if isinstance(data, dict):
+        data_copy = dict(data)
+        for k, v in data.items():
+            if isinstance(v, list):
+                data_copy[f"{k}_count"] = len(v)
+    else:
+        data_copy = {}
+
+    def _fmt(text: str) -> str:
+        try:
+            return text.format(**data_copy)
+        except Exception:
+            return text
 
     fallback = STATIC_FALLBACKS.get(key)
     if fallback:
         return RiskItem(
             id=hashlib.md5(key.encode()).hexdigest()[:12],
-            title=fallback[0],
+            title=_fmt(fallback[0]),
             severity=severity,
-            business_impact=fallback[1],
-            technical_detail=fallback[2],
-            fix_action=fallback[3],
+            business_impact=_fmt(fallback[1]),
+            technical_detail=_fmt(fallback[2]),
+            fix_action=_fmt(fallback[3]),
             confidence=fallback[4],
             fix_difficulty=fallback[5] if len(fallback) > 5 else "Medium",
             estimated_fix_time=fallback[6] if len(fallback) > 6 else "30 minutes",
@@ -241,7 +298,7 @@ def _get_static_fallback(finding: Dict[str, Any]) -> RiskItem:
         )
     return RiskItem(
         id=hashlib.md5(key.encode()).hexdigest()[:12],
-        title="Security Configuration Issue",
+        title=finding.get("detail", "Security Configuration Issue"),
         severity=severity,
         business_impact="Your website has a security gap that could impact customers.",
         technical_detail=finding.get("detail", "Security misconfiguration detected."),

@@ -11,6 +11,8 @@ All checks are PASSIVE — DNS queries only.
 import asyncio
 import json
 import logging
+import socket
+import ssl as ssl_module
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -82,6 +84,14 @@ class DNSResult:
     # Typosquatting
     typosquat_count: int = 0
     typosquat_domains: list[str] = field(default_factory=list)
+
+    # New v2 fields
+    has_bimi: bool = False
+    bimi_record: Optional[str] = None
+    has_mta_sts: bool = False
+    mta_sts_policy: Optional[str] = None
+    smtp_no_starttls: bool = False
+    dmarc: Optional[dict] = None  # {policy: str, ...} for classifier
 
     # Error
     error: Optional[str] = None
@@ -302,11 +312,72 @@ async def _check_typosquatting(domain: str, result: DNSResult) -> None:
         logger.warning(f"dnstwist subprocess failed for {domain}: {e}")
 
 
+async def _check_bimi(domain: str, result: DNSResult) -> None:
+    """Check for BIMI (Brand Indicators for Message Identification) record."""
+    try:
+        txts = await _query_txt(f"default._bimi.{domain}")
+        bimi = next((t for t in txts if t.lower().startswith("v=bimi1")), None)
+        if bimi:
+            result.has_bimi = True
+            result.bimi_record = bimi[:200]
+    except Exception:
+        pass
+
+
+async def _check_mta_sts(domain: str, result: DNSResult) -> None:
+    """Check for MTA-STS (Mail Transfer Agent Strict Transport Security)."""
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, verify=False) as client:
+            url = f"https://mta-sts.{domain}/.well-known/mta-sts.txt"
+            res = await client.get(url)
+            if res.status_code == 200 and "mode:" in res.text.lower():
+                result.has_mta_sts = True
+                # Extract policy mode
+                for line in res.text.splitlines():
+                    if line.strip().lower().startswith("mode:"):
+                        result.mta_sts_policy = line.strip().split(":", 1)[1].strip()
+                        break
+    except Exception:
+        pass
+
+
+async def _check_smtp_tls(domain: str, result: DNSResult) -> None:
+    """Check if MX server supports STARTTLS."""
+    if not result.mx_records:
+        return
+    try:
+        mx_host = result.mx_records[0].get("host", "") if result.mx_records else ""
+        if not mx_host:
+            return
+        mx_host = mx_host.rstrip(".")
+
+        def _test_starttls(host: str) -> bool:
+            try:
+                sock = socket.create_connection((host, 25), timeout=8)
+                banner = sock.recv(1024).decode("utf-8", errors="replace")
+                sock.sendall(b"EHLO shieldcheck.in\r\n")
+                ehlo_resp = sock.recv(4096).decode("utf-8", errors="replace")
+                has_starttls = "starttls" in ehlo_resp.lower()
+                sock.sendall(b"QUIT\r\n")
+                sock.close()
+                return has_starttls
+            except Exception:
+                return True  # If we can't connect, don't flag
+
+        has_tls = await asyncio.to_thread(_test_starttls, mx_host)
+        if not has_tls:
+            result.smtp_no_starttls = True
+    except Exception:
+        pass
+
+
 async def run(domain: str) -> DNSResult:
     """Run all DNS security checks concurrently."""
     result = DNSResult()
 
     try:
+        # Phase 1: MX needs to complete before SMTP TLS check
         await asyncio.gather(
             _check_spf(domain, result),
             _check_dmarc(domain, result),
@@ -318,8 +389,24 @@ async def run(domain: str) -> DNSResult:
             _check_subdomains(domain, result),
             _check_zone_transfer(domain, result),
             _check_typosquatting(domain, result),
+            _check_bimi(domain, result),
+            _check_mta_sts(domain, result),
             return_exceptions=True,
         )
+
+        # Phase 2: SMTP TLS (needs MX results)
+        try:
+            await asyncio.wait_for(_check_smtp_tls(domain, result), timeout=10.0)
+        except (asyncio.TimeoutError, Exception):
+            pass
+
+        # Build dmarc dict for classifier
+        if result.has_dmarc:
+            result.dmarc = {
+                "policy": result.dmarc_policy or "none",
+                "record": result.dmarc_record,
+            }
+
     except Exception as e:
         logger.error(f"DNS check failed for domain={domain}: {e}", exc_info=True)
         result.error = "DNS check partially failed"

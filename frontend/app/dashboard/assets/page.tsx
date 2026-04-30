@@ -1,0 +1,94 @@
+"use client";
+
+import { cn } from "@/lib/utils";
+import { Globe, Plus, Search, MoreHorizontal, Play, History, Settings, Trash2, CheckCircle2, Clock, AlertCircle, Loader2 } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { useState, useEffect } from "react";
+import { getDomains } from "@/lib/api";
+import { useAuthStore } from "@/store/authStore";
+
+const statusConfig = {
+  verified: { label: "Verified", icon: CheckCircle2, cls: "bg-success/10 text-success border-success/20" },
+  pending: { label: "Pending", icon: Clock, cls: "bg-medium/10 text-medium border-medium/20" },
+  unverified: { label: "Unverified", icon: AlertCircle, cls: "bg-gray-600/10 text-gray-400 border-gray-600/20" },
+};
+
+export default function AssetsPage() {
+  const [search, setSearch] = useState("");
+  const token = useAuthStore((state) => state.token);
+  const [domains, setDomains] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (token) {
+      getDomains(token)
+        .then(data => setDomains(Array.isArray(data) ? data : []))
+        .catch(err => console.error(err))
+        .finally(() => setLoading(false));
+    }
+  }, [token]);
+
+  const filtered = domains.filter(d => (d.domain_name || "").toLowerCase().includes(search.toLowerCase()));
+
+  if (loading) {
+    return <div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 text-text-muted animate-spin" /></div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-title text-text-primary">Assets</h1>
+          <p className="text-sm text-text-secondary mt-1">{domains.length} domains in your workspace</p>
+        </div>
+        <button className="px-4 py-2.5 rounded-btn bg-nanz-gradient text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-2">
+          <Plus className="w-4 h-4" /> Add Domain
+        </button>
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search domains..."
+          className="w-full pl-11 pr-4 py-2.5 rounded-btn bg-surface border border-surface-border text-sm text-text-primary placeholder:text-text-muted focus:border-nanz-500 focus:ring-1 focus:ring-nanz-500/30 outline-none transition-all"
+        />
+      </div>
+
+      {/* Table */}
+      <div className="rounded-card border border-card-border bg-card overflow-hidden">
+        <div className="grid grid-cols-[1fr_120px_80px_100px_140px_48px] gap-4 px-5 py-3 border-b border-surface-border text-xs font-medium text-text-muted uppercase tracking-wider">
+          <span>Domain</span><span>Status</span><span>Score</span><span>Monitoring</span><span>Last Scan</span><span />
+        </div>
+        {filtered.length === 0 ? (
+          <div className="p-8 text-center text-text-muted">No domains found. Add a domain to get started.</div>
+        ) : filtered.map((domain) => {
+          const status = statusConfig[domain.status as keyof typeof statusConfig] || statusConfig.unverified;
+          return (
+            <div key={domain.id} className="grid grid-cols-[1fr_120px_80px_100px_140px_48px] gap-4 px-5 py-4 border-b border-surface-border last:border-b-0 hover:bg-surface-hover/50 transition-colors items-center">
+              <div className="flex items-center gap-3 min-w-0">
+                <Globe className="w-4 h-4 text-text-muted flex-shrink-0" />
+                <span className="text-sm font-medium text-text-primary truncate">{domain.domain_name}</span>
+              </div>
+              <div>
+                <span className={cn("inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium border", status.cls)}>
+                  <status.icon className="w-3 h-3" /> {status.label}
+                </span>
+              </div>
+              <div className={cn("text-sm font-bold text-text-muted")}>
+                —
+              </div>
+              <div className="text-xs text-text-secondary capitalize">{domain.monitoring_frequency || "weekly"}</div>
+              <div className="text-xs text-text-muted">{domain.created_at ? new Date(domain.created_at).toLocaleDateString() : "Never"}</div>
+              <button className="p-1.5 rounded hover:bg-surface transition-colors text-text-muted hover:text-text-secondary">
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

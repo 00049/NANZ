@@ -54,3 +54,105 @@ async def get_scan_preview(scan_id: UUID, db: AsyncSession = Depends(get_db)) ->
         status_code = 404 if "not found" in result["error"].lower() else 400
         raise HTTPException(status_code=status_code, detail=result["error"])
     return result
+
+
+@router.post("/{scan_id}/feedback")
+@limiter.limit("10/minute")
+async def submit_finding_feedback(
+    request: Request, scan_id: UUID, body: dict, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Submit feedback on a specific finding (false_positive / confirmed / fixed)."""
+    from app.models.scan import Scan
+    from sqlalchemy import select, text as sa_text
+
+    finding_id = body.get("finding_id", "")
+    check_type = body.get("check_type", "")
+    feedback_type = body.get("feedback_type", "")
+
+    if feedback_type not in ("false_positive", "confirmed", "fixed"):
+        raise HTTPException(status_code=422, detail="feedback_type must be: false_positive, confirmed, or fixed")
+    if not finding_id or not check_type:
+        raise HTTPException(status_code=422, detail="finding_id and check_type are required")
+
+    # Verify scan exists
+    result = await db.execute(select(Scan).where(Scan.id == scan_id))
+    scan = result.scalars().first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    # Insert feedback
+    await db.execute(
+        sa_text(
+            "INSERT INTO scan_feedback (scan_id, finding_id, check_type, feedback_type) "
+            "VALUES (:scan_id, :finding_id, :check_type, :feedback_type)"
+        ),
+        {"scan_id": str(scan_id), "finding_id": finding_id, "check_type": check_type, "feedback_type": feedback_type},
+    )
+    await db.commit()
+    return {"status": "ok", "message": f"Feedback '{feedback_type}' recorded for {check_type}"}
+
+
+@router.get("/compare")
+async def compare_scans(scan_a: UUID, scan_b: UUID, db: AsyncSession = Depends(get_db)) -> dict:
+    """Compare two scans of the same domain and return differences."""
+    from app.models.scan import Scan
+    from app.models.report import Report
+    from sqlalchemy import select
+
+    s1 = await db.execute(select(Scan).where(Scan.id == scan_a))
+    s2 = await db.execute(select(Scan).where(Scan.id == scan_b))
+    scan1 = s1.scalars().first()
+    scan2 = s2.scalars().first()
+
+    if not scan1 or not scan2:
+        raise HTTPException(status_code=404, detail="One or both scans not found")
+
+    if scan1.domain != scan2.domain:
+        raise HTTPException(status_code=400, detail="Cannot compare scans from different domains")
+
+    if scan1.status != "completed" or scan2.status != "completed":
+        raise HTTPException(status_code=400, detail="Both scans must be completed to compare")
+
+    r1 = await db.execute(select(Report).where(Report.scan_id == scan_a))
+    r2 = await db.execute(select(Report).where(Report.scan_id == scan_b))
+    report1 = r1.scalars().first()
+    report2 = r2.scalars().first()
+
+    if not report1 or not report2:
+        raise HTTPException(status_code=404, detail="One or both reports not found")
+
+    # Diff logic
+    findings_a = {f["id"]: f for f in report1.findings}
+    findings_b = {f["id"]: f for f in report2.findings}
+
+    resolved = [f for f_id, f in findings_a.items() if f_id not in findings_b]
+    new_issues = [f for f_id, f in findings_b.items() if f_id not in findings_a]
+    persisting = [f for f_id, f in findings_b.items() if f_id in findings_a]
+
+    return {
+        "domain": scan1.domain,
+        "scan_a": {
+            "scan_id": str(scan_a),
+            "date": scan1.created_at.isoformat(),
+            "score": report1.overall_score,
+            "severity": report1.overall_severity,
+            "total_findings": report1.total_findings
+        },
+        "scan_b": {
+            "scan_id": str(scan_b),
+            "date": scan2.created_at.isoformat(),
+            "score": report2.overall_score,
+            "severity": report2.overall_severity,
+            "total_findings": report2.total_findings
+        },
+        "comparison": {
+            "score_change": report2.overall_score - report1.overall_score,
+            "improved": report2.overall_score > report1.overall_score,
+            "resolved_count": len(resolved),
+            "new_count": len(new_issues),
+            "persisting_count": len(persisting),
+            "resolved_findings": resolved,
+            "new_findings": new_issues,
+            "persisting_findings": persisting
+        }
+    }

@@ -250,8 +250,16 @@ async def _check_admin_panels(client: httpx.AsyncClient, base_url: str) -> list[
                 headers={"User-Agent": USER_AGENT},
             )
             # 200 or 401/403 (exists but protected) are notable
-            if res.status_code in (200, 401, 403):
+            if res.status_code in (401, 403):
                 found.append(path)
+            elif res.status_code == 200:
+                content = res.text.lower()
+                # Validate it's not a soft 404 and actually looks like a login/admin page
+                is_soft_404 = len(content.strip()) < 10 or any(
+                    ind in content for ind in ["not found", "404", "page not found", "does not exist", "nothing found"]
+                )
+                if not is_soft_404 and ("password" in content or "login" in content or "admin" in content):
+                    found.append(path)
         except Exception:
             continue
 
@@ -269,7 +277,12 @@ async def _check_install_files(client: httpx.AsyncClient, base_url: str) -> list
                 headers={"User-Agent": USER_AGENT},
             )
             if res.status_code == 200 and len(res.text) > 50:
-                found.append(path)
+                content_lower = res.text.lower()
+                is_soft_404 = any(
+                    ind in content_lower for ind in ["not found", "404", "page not found", "does not exist", "nothing found"]
+                )
+                if not is_soft_404 and ("install" in content_lower or "setup" in content_lower or "database" in content_lower):
+                    found.append(path)
         except Exception:
             continue
 

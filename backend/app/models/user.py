@@ -17,6 +17,11 @@ class User(Base):
         server_default=text("gen_random_uuid()")
     )
     email = Column(String(255), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=True) # Nullable for OAuth or legacy users
+    name = Column(String(255), nullable=True)
+    company = Column(String(255), nullable=True)
+    role = Column(String(50), default="user") # 'user', 'admin'
+    
     email_verified = Column(Boolean, default=False)
     scan_credits = Column(Integer, default=0)
     

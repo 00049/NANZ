@@ -40,3 +40,37 @@ def run_scan(self, scan_id: str, url: str) -> None:
         logger.info(f"Scan task completed for scan_id: {scan_id}")
     except Exception as e:
         logger.error(f"Scan task failed for scan_id {scan_id}: {e}", exc_info=True)
+
+
+@celery.task(name="check_scheduled_scans")
+def check_scheduled_scans_task() -> None:
+    """Periodic task to check and run due scheduled rescans."""
+    logger.info("Checking for scheduled rescans...")
+    
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+    from app.db.session import async_session_maker
+    from app.services.scheduler import get_due_schedules, execute_scheduled_scan
+    
+    async def _process_schedules():
+        async with async_session_maker() as db:
+            schedules = await get_due_schedules(db)
+            for schedule in schedules:
+                try:
+                    await execute_scheduled_scan(schedule, db, redis_client)
+                except Exception as e:
+                    logger.error(f"Failed to process schedule {schedule.id}: {e}", exc_info=True)
+                    
+    loop.run_until_complete(_process_schedules())
+
+
+celery.conf.beat_schedule = {
+    "run-scheduled-scans-every-hour": {
+        "task": "check_scheduled_scans",
+        "schedule": 3600.0, # every 1 hour
+    },
+}

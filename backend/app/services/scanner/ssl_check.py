@@ -90,9 +90,18 @@ def _deep_ssl_inspect(domain: str) -> SSLResult:
         return _basic_ssl_fallback(domain)
 
     try:
+        from sslyze import ServerNetworkConfiguration
+        
         location = ServerNetworkLocation(hostname=domain, port=443)
+        net_config = ServerNetworkConfiguration(
+            tls_server_name_indication=domain,
+            network_timeout=15,
+            network_max_retries=3
+        )
+        
         scan_request = ServerScanRequest(
             server_location=location,
+            network_configuration=net_config,
             scan_commands={
                 ScanCommand.CERTIFICATE_INFO,
                 ScanCommand.SSL_2_0_CIPHER_SUITES,
@@ -275,18 +284,21 @@ def _check_ciphers(scan_result, result: SSLResult) -> None:
         logger.warning(f"Error checking cipher suites: {e}")
 
 
+import socket
+import ssl
+
 def _basic_ssl_fallback(domain: str) -> SSLResult:
     """Fallback to basic ssl module check if SSLyze is unavailable."""
-    import socket
-    import ssl as ssl_module
-
     result = SSLResult()
     try:
-        ctx = ssl_module.create_default_context()
+        ctx = ssl.create_default_context()
         with socket.create_connection((domain, 443), timeout=10.0) as sock:
             with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
                 cert = ssock.getpeercert()
                 protocol = ssock.version()
+
+                if not cert:
+                    return _httpx_ssl_fallback(domain)
 
                 expiry_str = cert["notAfter"]
                 expiry = datetime.strptime(expiry_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
@@ -315,10 +327,28 @@ def _basic_ssl_fallback(domain: str) -> SSLResult:
                 return result
     except Exception as e:
         logger.error(f"Basic SSL check failed for domain={domain}: {e}", exc_info=True)
-        result.error = "SSL check unavailable"
-        return result
+        return _httpx_ssl_fallback(domain)
+
+
+def _httpx_ssl_fallback(domain: str) -> SSLResult:
+    """Ultimate fallback: just check if HTTPS port 443 responds."""
+    import httpx
+    try:
+        # Use verify=False to ignore certificate validation errors, just check if port is open
+        with httpx.Client(verify=False, timeout=5.0) as client:
+            client.head(f"https://{domain}")
+            # If it succeeds or returns a status code (even 4xx/5xx), port 443 is serving HTTPS
+            # We don't have cert details, but we know it's HTTPS
+            return SSLResult(valid=False, error="SSL details unavailable, but port 443 is open")
+    except Exception:
+        return SSLResult(valid=False, error="Could not connect to port 443 — site may not support HTTPS")
 
 
 async def run(domain: str) -> SSLResult:
-    """Run deep SSL/TLS analysis asynchronously."""
-    return await asyncio.to_thread(_deep_ssl_inspect, domain)
+    """Run deep SSL/TLS analysis asynchronously with explicit fallback chain."""
+    try:
+        return await asyncio.to_thread(_deep_ssl_inspect, domain)
+    except Exception as e:
+        logger.error(f"Top-level exception in ssl_check.run for {domain}: {e}")
+        return SSLResult(valid=False, error="Could not connect to port 443 — site may not support HTTPS")
+

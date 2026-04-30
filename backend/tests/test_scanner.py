@@ -3,10 +3,12 @@ from unittest.mock import patch, MagicMock
 from app.utils.url_validator import validate_scan_url
 
 @pytest.mark.asyncio
+@patch('app.services.scanner.ssl_check._deep_ssl_inspect')
 @patch('app.services.scanner.ssl_check.ssl')
 @patch('app.services.scanner.ssl_check.socket')
-async def test_ssl_check_valid_cert(mock_socket, mock_ssl):
-    from app.services.scanner.ssl_check import run
+async def test_ssl_check_valid_cert(mock_socket, mock_ssl, mock_deep):
+    from app.services.scanner.ssl_check import run, _basic_ssl_fallback
+    mock_deep.side_effect = lambda domain: _basic_ssl_fallback(domain)
     
     mock_ctx = MagicMock()
     mock_ssl.create_default_context.return_value = mock_ctx
@@ -26,10 +28,13 @@ async def test_ssl_check_valid_cert(mock_socket, mock_ssl):
     assert result.days_until_expiry > 0
 
 @pytest.mark.asyncio
+@patch('app.services.scanner.ssl_check._deep_ssl_inspect')
 @patch('app.services.scanner.ssl_check.ssl')
 @patch('app.services.scanner.ssl_check.socket')
-async def test_ssl_check_expired_cert(mock_socket, mock_ssl):
-    from app.services.scanner.ssl_check import run
+async def test_ssl_check_expired_cert(mock_socket, mock_ssl, mock_deep):
+    from app.services.scanner.ssl_check import run, _basic_ssl_fallback
+    mock_deep.side_effect = lambda domain: _basic_ssl_fallback(domain)
+    
     mock_ctx = MagicMock()
     mock_ssl.create_default_context.return_value = mock_ctx
     mock_ssock = MagicMock()
