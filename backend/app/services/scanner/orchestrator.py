@@ -1,11 +1,15 @@
 """
-Expanded Scan Orchestrator v2 — runs all 15 check modules with WAF context sharing.
+Enterprise Scan Orchestrator v3 — runs all 25 check modules with WAF context sharing.
 
-Modules (15 total):
-  Phase 1 (pre-scan):  waf_check (result shared with classifier)
-  Phase 2 (parallel):  ssl, headers, dns, ports, breach, cms, cookies,
-                        webapp, reputation, infra, javascript, cors,
-                        http_methods, cloud_exposure
+Phase 1 (pre-scan)  : waf_check (result shared with classifier)
+Phase 2 (parallel)  : ssl, headers, dns, ports, breach, cms, cookies,
+                       webapp, reputation, infra, javascript, cors,
+                       http_methods, cloud_exposure, email, performance,
+                       tech_inventory, crawl_intelligence
+Phase 3 (enterprise): iast_behavioral, oast_check, api_security, graphql,
+                       business_logic, container_security, dependency,
+                       llm_security (all in parallel, OAST session shared)
+Phase 4 (post)      : ASPM score aggregation
 
 Weighted scoring with exploitability multipliers.
 Industry benchmark comparison.
@@ -17,6 +21,7 @@ import logging
 import json
 from datetime import datetime, timezone
 from dataclasses import asdict
+from typing import Optional
 
 from app.services.scanner import (
     ssl_check, headers_check, dns_check, port_check,
@@ -27,6 +32,17 @@ from app.services.scanner import (
     email_security_check, performance_check,
     tech_inventory, crawl_intelligence
 )
+# Enterprise modules
+from app.services.scanner import iast_behavioral
+from app.services.scanner import oast_check
+from app.services.scanner import api_security_check
+from app.services.scanner import graphql_check
+from app.services.scanner import business_logic_check
+from app.services.scanner import container_security_check
+from app.services.scanner import dependency_check
+from app.services.scanner import llm_security_check
+from app.services.oast.oast_client import OASTClient, OASTUnavailableError
+from app.services.aspm_engine import compute_aspm_report
 from app.services.cve_intelligence import map_cves
 from app.services.classifier import classify_findings
 from app.services.ai_translator import translate_to_plain_english, generate_executive_summary
@@ -42,7 +58,7 @@ from sqlalchemy.exc import SQLAlchemyError
 import logging
 logger = logging.getLogger(__name__)
 
-TOTAL_CHECK_DOMAINS = 20
+TOTAL_CHECK_DOMAINS = 28
 
 # ── New dynamic scoring: R = (CVSS × EM × VF) − MF ──
 #
@@ -319,7 +335,10 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
         "breach_check", "cms_check", "cookie_check", "webapp_check",
         "reputation_check", "infra_check", "javascript_check", "cors_check",
         "http_methods_check", "cloud_exposure_check",
-        "email_security_check", "performance_check", "tech_inventory", "crawl_intelligence"
+        "email_security_check", "performance_check", "tech_inventory", "crawl_intelligence",
+        # Enterprise modules
+        "iast_behavioral", "oast_check", "api_security", "graphql",
+        "business_logic", "container_security", "dependency", "llm_security",
     ]
     progress = {name: "pending" for name in check_names}
 
@@ -428,6 +447,86 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                     logger.warning(f"CVE intelligence failed for {domain}: {e}")
                     raw_findings["cve"] = {"status": "error", "error": str(e)}
 
+        # ── Phase 3b: Enterprise Security Modules ──
+        # Start OAST session for shared use across OAST + IAST probes
+        oast_client: Optional[OASTClient] = None
+        try:
+            oast_client = OASTClient()
+            await oast_client.start_session()
+        except OASTUnavailableError as exc:
+            logger.warning(f"OAST session unavailable (degraded mode): {exc}")
+            oast_client = None
+
+        async def wrap_enterprise(name: str, coro, fallback: dict) -> dict:
+            """Run an enterprise module coroutine with timeout and fallback."""
+            try:
+                progress[name] = "running"
+                try:
+                    await redis_client.set(progress_key, json.dumps(progress), ex=3600)
+                except Exception:
+                    pass
+                result_obj = await asyncio.wait_for(coro, timeout=120.0)
+                progress[name] = "complete"
+                try:
+                    await redis_client.set(progress_key, json.dumps(progress), ex=3600)
+                except Exception:
+                    pass
+                # Convert dataclass to dict if necessary
+                if hasattr(result_obj, "__dict__"):
+                    return _json_safe(result_obj.__dict__)
+                return _json_safe(result_obj)
+            except Exception as exc:
+                logger.error(f"Enterprise module {name} failed: {exc}", exc_info=True)
+                progress[name] = "failed"
+                return {**fallback, "error": str(exc)[:200]}
+
+        ent_iast, ent_oast, ent_api, ent_graphql, ent_bl, ent_container, ent_dep, ent_llm = \
+            await asyncio.gather(
+                wrap_enterprise("iast_behavioral",
+                    iast_behavioral.run(url, domain),
+                    {"error_verbosity_score": 0, "probes_sent": 0}),
+                wrap_enterprise("oast_check",
+                    oast_check.run(url, domain, oast_client),
+                    {"ssrf_confirmed": False, "probes_sent": 0}),
+                wrap_enterprise("api_security",
+                    api_security_check.run(url, domain),
+                    {"endpoints_discovered": []}),
+                wrap_enterprise("graphql",
+                    graphql_check.run(url, domain),
+                    {"graphql_detected": False}),
+                wrap_enterprise("business_logic",
+                    business_logic_check.run(url, domain),
+                    {"probes_sent": 0}),
+                wrap_enterprise("container_security",
+                    container_security_check.run(url, domain),
+                    {"findings": []}),
+                wrap_enterprise("dependency",
+                    dependency_check.run(url, domain),
+                    {"detected_libraries": []}),
+                wrap_enterprise("llm_security",
+                    llm_security_check.run(url, domain),
+                    {"llm_surface_detected": False}),
+                return_exceptions=False,
+            )
+
+        # Close OAST session if active
+        if oast_client:
+            try:
+                await oast_client.stop_session()
+            except Exception:
+                pass
+
+        enterprise_results = {
+            "iast": ent_iast,
+            "oast": ent_oast,
+            "api_security": ent_api,
+            "graphql": ent_graphql,
+            "business_logic": ent_bl,
+            "container": ent_container,
+            "dependency": ent_dep,
+            "llm_security": ent_llm,
+        }
+
         all_failed = all(
             res.get("status") == "error"
             for key, res in raw_findings.items()
@@ -448,6 +547,19 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
 
         # ── Weighted score ──
         overall_score, score_breakdown = _calculate_weighted_score(classified, raw_findings, waf_data)
+
+        # ── Phase 4: ASPM Score (enterprise-adjusted) ──
+        try:
+            aspm_report = compute_aspm_report(
+                classified_findings=classified,
+                raw_findings=raw_findings,
+                enterprise_results=enterprise_results,
+                base_score=overall_score,
+            )
+            aspm_data = _json_safe(aspm_report.__dict__)
+        except Exception as exc:
+            logger.warning(f"ASPM computation failed: {exc}")
+            aspm_data = None
 
         # ── AI translate ──
         ai_items = await translate_to_plain_english(classified, domain)
@@ -490,9 +602,17 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
             finding_data = raw_findings.get(key, {})
             if isinstance(finding_data, dict):
                 domain_reports[key] = finding_data.get("data", {})
-        
+
         domain_reports["score_breakdown"] = score_breakdown
         domain_reports["industry_benchmark"] = benchmark
+
+        # Use ASPM score as the definitive overall score
+        if aspm_data:
+            overall_score = aspm_data.get("aspm_score", overall_score)
+            domain_reports["aspm"] = aspm_data
+
+        # Store enterprise results in domain_reports
+        domain_reports["enterprise"] = enterprise_results
 
         end_time = datetime.now(timezone.utc)
         duration_ms = int((end_time - start_time).total_seconds() * 1000)
@@ -540,10 +660,10 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                         crawl_findings=domain_reports.get("crawl"),
                         compliance_report=compliance_report_dict,
                         brand_threats=_json_safe(domain_reports.get("reputation", {})),
-                        bola_findings=None,
-                        api_findings=None,
-                        llm_findings=None,
-                        oast_interactions=None,
+                        bola_findings=_json_safe(enterprise_results.get("api_security", {})),
+                        api_findings=_json_safe(enterprise_results.get("api_security", {})),
+                        llm_findings=_json_safe(enterprise_results.get("llm_security", {})),
+                        oast_interactions=_json_safe(enterprise_results.get("oast", {})),
                         cve_findings=domain_reports.get("cve")
                     )
                     db.add(report)

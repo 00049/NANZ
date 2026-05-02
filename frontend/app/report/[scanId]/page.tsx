@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getFullReport, getRoadmap, getComplianceReport, getBrandThreats } from '@/lib/api';
+import { getFullReport, getRoadmap, getComplianceReport, getBrandThreats, getEnterpriseData, getASPMScore } from '@/lib/api';
 import { useScanStore } from '@/store/scanStore';
 import { FullReport, RemediationRoadmap as RoadmapType } from '@/types';
 import Navbar from '@/components/Navbar';
@@ -15,16 +15,25 @@ import EmailSecurityGrade from '@/components/EmailSecurityGrade';
 import DisclaimerBanner from '@/components/DisclaimerBanner';
 import ComplianceReport from '@/components/ComplianceReport';
 import BrandThreatCard from '@/components/BrandThreatCard';
+import ASPMScorePanel from '@/components/ASPMScorePanel';
+import OWASPCoverageMap from '@/components/OWASPCoverageMap';
+import EnterpriseRemediation from '@/components/EnterpriseRemediation';
+import DependencyScanPanel from '@/components/DependencyScanPanel';
+import LLMSecurityPanel from '@/components/LLMSecurityPanel';
 import { Loader2, Download, Shield, ShieldAlert, CheckCircle2, TrendingUp } from 'lucide-react';
 
 const NAV_SECTIONS = [
-  { id: 'overview',       label: 'Overview' },
-  { id: 'roadmap',        label: 'Remediation Roadmap' },
-  { id: 'compliance',     label: 'Compliance' },
-  { id: 'brand-threats',  label: 'Brand Protection' },
-  { id: 'email-security', label: 'Email Security' },
-  { id: 'technology-stack', label: 'Technology Stack' },
-  { id: 'all-findings',   label: 'All Findings' },
+  { id: 'overview',             label: 'Overview' },
+  { id: 'aspm-posture',         label: 'ASPM Posture Score' },
+  { id: 'enterprise-remediation', label: 'Remediation Roadmap' },
+  { id: 'owasp-coverage',       label: 'OWASP Coverage' },
+  { id: 'dependency-scan',      label: 'Dependency Analysis' },
+  { id: 'llm-security',         label: 'AI/LLM Security' },
+  { id: 'compliance',           label: 'Compliance' },
+  { id: 'brand-threats',        label: 'Brand Protection' },
+  { id: 'email-security',       label: 'Email Security' },
+  { id: 'technology-stack',     label: 'Technology Stack' },
+  { id: 'all-findings',         label: 'All Findings' },
 ];
 
 export default function ReportPage({ params }: { params: { scanId: string } }) {
@@ -32,6 +41,9 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
   const [roadmap, setRoadmapData] = useState<RoadmapType | null>(null);
   const [compliance, setCompliance] = useState<any>(null);
   const [brandThreats, setBrandThreats] = useState<any>(null);
+  const [enterpriseData, setEnterpriseData] = useState<any>(null);
+  const [aspmData, setAspmData] = useState<any>(null);
+  const [enterpriseLoading, setEnterpriseLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const { reportJWT, isPaid } = useScanStore();
   const router = useRouter();
@@ -39,6 +51,7 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        // Phase 1: fetch core report data
         const [rep, road, comp, brand] = await Promise.allSettled([
           getFullReport(params.scanId, ""),
           getRoadmap(params.scanId, ""),
@@ -54,6 +67,27 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
         console.error("Failed to fetch report data:", err);
       } finally {
         setIsLoading(false);
+      }
+
+      // Phase 2: fetch enterprise data (may run live scans, shown separately)
+      try {
+        setEnterpriseLoading(true);
+        const [entResult, aspmResult] = await Promise.allSettled([
+          getEnterpriseData(params.scanId),
+          getASPMScore(params.scanId),
+        ]);
+        if (entResult.status === 'fulfilled' && entResult.value) {
+          setEnterpriseData(entResult.value.enterprise || entResult.value);
+          // Also grab ASPM from enterprise response if present
+          if (entResult.value.aspm) setAspmData(entResult.value.aspm);
+        }
+        if (aspmResult.status === 'fulfilled' && aspmResult.value) {
+          setAspmData(aspmResult.value);
+        }
+      } catch (err) {
+        console.error("Failed to fetch enterprise data:", err);
+      } finally {
+        setEnterpriseLoading(false);
       }
     };
 
@@ -157,7 +191,45 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
               </div>
             </section>
 
-            {/* REMEDIATION ROADMAP */}
+            {/* ASPM POSTURE SCORE */}
+            {enterpriseLoading && !aspmData ? (
+              <section id="aspm-posture" className="scroll-mt-8">
+                <div className="bg-surface border border-card-border rounded-card p-8 flex items-center gap-4 animate-pulse">
+                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                    <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                  </div>
+                  <div>
+                    <div className="text-text-primary font-bold">Running Enterprise Security Scans…</div>
+                    <div className="text-text-muted text-sm mt-1">ASPM Score · OWASP Coverage · Dependency Analysis · AI/LLM Security</div>
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <>
+                <ASPMScorePanel data={aspmData} />
+
+                {/* ENTERPRISE REMEDIATION ROADMAP */}
+                <EnterpriseRemediation
+                  roadmap={aspmData?.remediation_roadmap}
+                  quickWins={aspmData?.quick_wins}
+                  immediateActions={aspmData?.immediate_actions}
+                />
+
+                {/* OWASP COVERAGE MAP */}
+                <OWASPCoverageMap
+                  coverage={aspmData?.owasp_coverage}
+                  coveredCount={aspmData?.owasp_covered_count}
+                />
+
+                {/* DEPENDENCY ANALYSIS */}
+                <DependencyScanPanel data={enterpriseData?.dependency} />
+
+                {/* LLM / AI SECURITY */}
+                <LLMSecurityPanel data={enterpriseData?.llm_security} />
+              </>
+            )}
+
+            {/* LEGACY REMEDIATION ROADMAP */}
             <RemediationRoadmap roadmap={roadmap} />
 
             {/* COMPLIANCE REPORT */}

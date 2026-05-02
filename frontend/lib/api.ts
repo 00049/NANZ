@@ -68,6 +68,18 @@ export async function getBrandThreats(scanId: string): Promise<any> {
   return res.json();
 }
 
+export async function getEnterpriseData(scanId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/reports/${scanId}/enterprise`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function getASPMScore(scanId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/reports/${scanId}/aspm`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 
 // --- AUTHENTICATION ---
 export async function registerUser(data: any) {

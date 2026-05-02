@@ -160,3 +160,179 @@ async def get_bola_findings(scan_id: UUID, db: AsyncSession = Depends(get_db)) -
         "message": "BOLA/IDOR scanning requires providing two sets of target credentials."
         if not report.bola_findings else None
     }
+
+
+# ── Enterprise Security Data ───────────────────────────────────────────────────
+
+@router.get("/{scan_id}/enterprise")
+async def get_enterprise_data(scan_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Return enterprise module results (IAST, OAST, API, GraphQL, Business Logic,
+    Container, Dependency, LLM) for a scan.
+
+    If the scan was run before enterprise modules were added, runs a lightweight
+    re-scan of the enterprise modules live.
+    """
+    result = await db.execute(select(Report).where(Report.scan_id == scan_id))
+    report = result.scalars().first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    domain_reports = report.domain_reports or {}
+
+    # Return stored enterprise data if present
+    if domain_reports.get("enterprise"):
+        return {
+            "enterprise": domain_reports["enterprise"],
+            "aspm": domain_reports.get("aspm"),
+        }
+
+    # Otherwise, run enterprise modules live against the scan domain
+    scan_result = await db.execute(select(Scan).where(Scan.id == scan_id))
+    scan = scan_result.scalars().first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    domain = scan.domain
+    url = f"https://{domain}"
+
+    import asyncio
+    from app.services.scanner import (
+        iast_behavioral, oast_check, api_security_check,
+        graphql_check, business_logic_check, container_security_check,
+        dependency_check, llm_security_check,
+    )
+    from app.services.oast.oast_client import OASTClient, OASTUnavailableError
+    from app.services.aspm_engine import compute_aspm_report
+    from app.services.classifier import classify_findings
+
+    # Start OAST session
+    oast_client = None
+    try:
+        oast_client = OASTClient()
+        await oast_client.start_session()
+    except (OASTUnavailableError, Exception):
+        oast_client = None
+
+    async def safe_run(coro, fallback: dict) -> dict:
+        try:
+            result_obj = await asyncio.wait_for(coro, timeout=90.0)
+            if hasattr(result_obj, "__dict__"):
+                return result_obj.__dict__
+            return result_obj
+        except Exception as exc:
+            return {**fallback, "error": str(exc)[:200]}
+
+    ent_iast, ent_oast, ent_api, ent_graphql, ent_bl, ent_container, ent_dep, ent_llm = \
+        await asyncio.gather(
+            safe_run(iast_behavioral.run(url, domain), {"error_verbosity_score": 0}),
+            safe_run(oast_check.run(url, domain, oast_client), {"ssrf_confirmed": False}),
+            safe_run(api_security_check.run(url, domain), {"endpoints_discovered": []}),
+            safe_run(graphql_check.run(url, domain), {"graphql_detected": False}),
+            safe_run(business_logic_check.run(url, domain), {"probes_sent": 0}),
+            safe_run(container_security_check.run(url, domain), {"findings": []}),
+            safe_run(dependency_check.run(url, domain), {"detected_libraries": []}),
+            safe_run(llm_security_check.run(url, domain), {"llm_surface_detected": False}),
+        )
+
+    if oast_client:
+        try:
+            await oast_client.stop_session()
+        except Exception:
+            pass
+
+    # JSON-safe helper
+    import json
+
+    def _safe(obj):
+        try:
+            return json.loads(json.dumps(obj, default=str))
+        except Exception:
+            return {}
+
+    enterprise_results = {
+        "iast": _safe(ent_iast),
+        "oast": _safe(ent_oast),
+        "api_security": _safe(ent_api),
+        "graphql": _safe(ent_graphql),
+        "business_logic": _safe(ent_bl),
+        "container": _safe(ent_container),
+        "dependency": _safe(ent_dep),
+        "llm_security": _safe(ent_llm),
+    }
+
+    # Compute ASPM
+    classified = report.risk_items or []
+    try:
+        aspm_report = compute_aspm_report(
+            classified_findings=classified,
+            raw_findings={},
+            enterprise_results=enterprise_results,
+            base_score=report.overall_score or 50,
+        )
+        aspm_data = _safe(aspm_report.__dict__)
+    except Exception as exc:
+        aspm_data = {"error": str(exc)}
+
+    # Persist back into domain_reports so future calls are instant
+    try:
+        updated_domain_reports = dict(domain_reports)
+        updated_domain_reports["enterprise"] = enterprise_results
+        updated_domain_reports["aspm"] = aspm_data
+        report.domain_reports = updated_domain_reports
+
+        # Also persist dedicated fields
+        report.bola_findings = enterprise_results.get("api_security")
+        report.api_findings = enterprise_results.get("api_security")
+        report.llm_findings = enterprise_results.get("llm_security")
+        report.oast_interactions = enterprise_results.get("oast")
+
+        await db.commit()
+    except Exception as exc:
+        # Non-fatal — still return the data
+        pass
+
+    return {
+        "enterprise": enterprise_results,
+        "aspm": aspm_data,
+    }
+
+
+# ── ASPM Posture Score ─────────────────────────────────────────────────────────
+
+@router.get("/{scan_id}/aspm")
+async def get_aspm_score(scan_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
+    """Return the ASPM posture score and OWASP coverage map for a scan."""
+    result = await db.execute(select(Report).where(Report.scan_id == scan_id))
+    report = result.scalars().first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    domain_reports = report.domain_reports or {}
+    if domain_reports.get("aspm"):
+        return domain_reports["aspm"]
+
+    # Compute on the fly from existing findings
+    from app.services.aspm_engine import compute_aspm_report
+    import json
+
+    def _safe(obj):
+        try:
+            return json.loads(json.dumps(obj, default=str))
+        except Exception:
+            return {}
+
+    classified = report.risk_items or []
+    enterprise_results = domain_reports.get("enterprise", {})
+
+    try:
+        aspm_report = compute_aspm_report(
+            classified_findings=classified,
+            raw_findings={},
+            enterprise_results=enterprise_results,
+            base_score=report.overall_score or 50,
+        )
+        return _safe(aspm_report.__dict__)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"ASPM computation failed: {exc}")
+
