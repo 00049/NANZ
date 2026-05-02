@@ -7,10 +7,3 @@ __pycache__/
 venv/
 # Added by code-review-graph
 .code-review-graph/
-
-# IDE and AI config
-.claude/
-.cursor/
-.kiro/
-.opencode.json
-.windsurfrules
