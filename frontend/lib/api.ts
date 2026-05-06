@@ -1,4 +1,4 @@
-import { ScanResponse, ScanProgress, PreviewResponse, FullReport, RemediationRoadmap } from '../types';
+import { ScanResponse, ScanProgress, PreviewResponse, FullReport, RemediationRoadmap, SBOMFormat, IngestResponse } from '../types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -81,6 +81,45 @@ export async function getASPMScore(scanId: string): Promise<any> {
 }
 
 
+export async function downloadSBOM(scanId: string, format: SBOMFormat = 'cyclonedx'): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/reports/${scanId}/sbom?format=${format}`);
+  if (!res.ok) throw new Error('SBOM generation failed');
+  return res.json();
+}
+
+export async function submitFindingFeedback(
+  scanId: string,
+  findingId: string,
+  action: 'mark_fixed' | 'false_positive',
+): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/reports/${scanId}/findings/${findingId}/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function ingestFindings(
+  scanId: string,
+  payload: { scanner: string; data: unknown },
+): Promise<IngestResponse> {
+  const res = await fetch(`${API_BASE}/api/ingest/${scanId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Ingestion failed');
+  return res.json();
+}
+
+export async function listScans(limit: number = 50, offset: number = 0): Promise<{ total: number; scans: any[] }> {
+  const res = await fetch(`${API_BASE}/api/scans?limit=${limit}&offset=${offset}`);
+  if (!res.ok) throw new Error('Failed to fetch scans');
+  return res.json();
+}
+
 // --- AUTHENTICATION ---
 export async function registerUser(data: any) {
   const res = await fetch(`${API_BASE}/api/auth/register`, {
@@ -97,7 +136,7 @@ export async function loginUser(data: any) {
   const formData = new URLSearchParams();
   formData.append('username', data.email);
   formData.append('password', data.password);
-  
+
   const res = await fetch(`${API_BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -127,7 +166,7 @@ export async function getDomains(token: string) {
 export async function createDomain(token: string, domain_name: string) {
   const res = await fetch(`${API_BASE}/api/domains`, {
     method: 'POST',
-    headers: { 
+    headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`
     },

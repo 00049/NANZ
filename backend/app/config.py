@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     ABUSEIPDB_API_KEY: str | None = None
     NUCLEI_TEMPLATES_PATH: str = "/opt/nuclei-templates"
 
+    # ── Threat Intelligence cache settings (EPSS + CISA KEV) ──
+    EPSS_CACHE_TTL: int = 86400              # 24 hours in seconds
+    KEV_CATALOG_REFRESH_HOURS: int = 1       # 1 hour in seconds
+
+    # ── Brand Protection APIs (optional) ──
+    INTELX_API_KEY: str | None = None        # IntelligenceX dark web search
+    GOOGLE_CSE_API_KEY: str | None = None    # Google Custom Search Engine
+    GOOGLE_CSE_CX: str | None = None         # Custom Search Engine ID
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

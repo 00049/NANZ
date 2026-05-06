@@ -10,7 +10,7 @@ from datetime import datetime
 
 
 class RiskItem(BaseModel):
-    """Expanded risk item with technical detail and fix metadata."""
+    """Expanded risk item with enterprise financial risk metrics and compliance mapping."""
 
     id: str = ""
     title: str
@@ -24,8 +24,40 @@ class RiskItem(BaseModel):
     fix_action: str
     fix_difficulty: Literal["Easy", "Medium", "Hard"] = "Medium"
     estimated_fix_time: str = ""
-    confidence: Literal["HIGH", "MEDIUM", "LOW"]
+    confidence: Literal["HIGH", "MEDIUM", "LOW"] = "MEDIUM"
     references: list[str] = []
+
+    # ── EPSS + CISA KEV enrichment ──────────────────────────────────────────
+    epss_score: Optional[float] = None          # 0.0–1.0 exploit probability
+    epss_percentile: Optional[int] = None       # 0–100
+    cisa_kev: bool = False                      # In CISA Known Exploited Vulns catalog
+    actively_exploited: bool = False            # kev OR epss >= 0.5
+    epss_badge: Optional[str] = None           # "🚨 CISA KEV" | "⚡ Actively Exploited" | ...
+
+    # ── Contextual severity override ────────────────────────────────────────
+    contextual_severity: Optional[str] = None   # Adjusted severity after EPSS/KEV
+    severity_adjusted: bool = False             # True if severity was changed
+    severity_reason: Optional[str] = None       # Explanation for adjustment
+    original_severity: Optional[str] = None     # Pre-adjustment severity
+
+    # ── RRF (Risk Reduction Factor) ─────────────────────────────────────────
+    rrf_score: Optional[float] = None           # 0.00–3.00
+    rrf_label: Optional[str] = None             # "High" | "Medium" | "Low"
+    rrf_display: Optional[str] = None           # "Risk Reduction: 2.14 (High)"
+
+    # ── ALE (Annual Loss Expectancy) — in INR ───────────────────────────────
+    ale_reduction_inr: Optional[int] = None     # Rupee value
+    ale_display: Optional[str] = None           # Human-readable INR display
+    ale_data: Optional[dict] = None             # Full ALE breakdown dict
+
+    # ── SLA Tier ─────────────────────────────────────────────────────────────
+    sla_deadline: Optional[str] = None          # "24 hours" | "7 days" | "30 days" | "90 days"
+    sla_tier: Optional[str] = None              # "P0" | "P1" | "P2" | "P3"
+
+    # ── Scanner provenance ────────────────────────────────────────────────────
+    source_scanner: Optional[str] = None        # "semgrep" | "snyk" | "trivy" | ...
+    ingested: bool = False                      # True if from BYOS ingestion
+    confirmed_by: list[str] = []                # All scanners that confirmed this finding
 
     @field_validator("title")
     def title_not_too_long(cls, v: str) -> str:
@@ -48,7 +80,7 @@ class DomainDetailReport(BaseModel):
 
 
 class FullReport(BaseModel):
-    """Full expanded security report with all 8 domains."""
+    """Full expanded security report with all enterprise intelligence fields."""
 
     scan_id: UUID
     domain: str
@@ -85,9 +117,44 @@ class FullReport(BaseModel):
     low_count: int = 0
     info_count: int = 0
 
-    # DPDP Compliance
+    # ── Legacy DPDP Compliance (basic) ───────────────────────────────────────
     dpdp_compliance_score: int = 0
     dpdp_issues: list[str] = []
+
+    # ── Enterprise Compliance v2 (section-level) ──────────────────────────────
+    compliance_report_v2: Optional[dict] = None     # Full DPDP/GDPR/PCI/SOC2 deep report
+    dpdp_penalty_crore: Optional[int] = None        # Total max DPDP penalty exposure (crore)
+    dpdp_risk_level: Optional[str] = None           # "Compliant" | "At Risk" | "Non-Compliant"
+    gdpr_status: Optional[str] = None               # "Compliant" | "Partial" | "Non-Compliant"
+    pci_status: Optional[str] = None                # "Compliant" | "Partial" | "Not Applicable"
+    soc2_status: Optional[str] = None              # "Compliant" | "Partial" | "Non-Compliant"
+
+    # ── OWASP Coverage ────────────────────────────────────────────────────────
+    owasp_coverage: Optional[dict] = None           # OWASP Top 10 2021 coverage map
+    owasp_llm_coverage: Optional[dict] = None       # OWASP LLM Top 10 2025 coverage map
+    owasp_coverage_score: int = 0                   # 0–100 percentage
+    owasp_llm_coverage_score: int = 0
+
+    # ── Risk Quantification Summary ───────────────────────────────────────────
+    total_ale_reduction_inr: Optional[int] = None   # Total preventable annual loss (INR)
+    total_ale_display: Optional[str] = None         # Human-readable INR summary
+    avg_rrf_score: Optional[float] = None
+    kev_findings_count: int = 0                     # Findings in CISA KEV
+    epss_enriched_count: int = 0                    # Findings with EPSS data
+    severity_adjusted_count: int = 0               # Findings with adjusted severity
+    p0_count: int = 0
+    p1_count: int = 0
+    p2_count: int = 0
+    p3_count: int = 0
+
+    # ── SBOM ─────────────────────────────────────────────────────────────────
+    sbom_generated: bool = False
+    sbom_component_count: int = 0
+
+    # ── BYOS Ingestion ────────────────────────────────────────────────────────
+    ingested_findings_count: int = 0
+    deduplication_savings: int = 0
+    ingestion_sources: list[str] = []
 
     # Metadata
     generated_at: datetime = datetime.utcnow()

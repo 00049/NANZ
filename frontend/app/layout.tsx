@@ -10,12 +10,12 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "NANZ | AI Cybersecurity Platform",
-  description: "Enterprise-grade AI-powered website security scanning, continuous monitoring, vulnerability reporting, and compliance readiness.",
-  keywords: ["cybersecurity", "security scanner", "vulnerability assessment", "DPDP compliance", "website security"],
+  title: "ShieldCheck — 29-Module Security Audit | DPDP Compliance | ₹499",
+  description: "Enterprise cybersecurity audit for Indian businesses. 29 passive scan modules, DPDP Act compliance mapping, EPSS-enriched CVE intelligence, plain-English reports with financial risk quantification. ₹499 one-time.",
+  keywords: ["DPDP compliance", "website security audit India", "cybersecurity MSME", "OWASP scanner India", "EPSS vulnerability scanner", "security headers checker", "SBOM generator", "NANZ"],
   openGraph: {
-    title: "NANZ | AI Cybersecurity Platform",
-    description: "Protect what you build. AI-powered security intelligence for modern businesses.",
+    title: "ShieldCheck — 29-Module Security Audit | DPDP Compliance | ₹499",
+    description: "Enterprise security intelligence at an Indian price. 29 passive scan modules, DPDP compliance mapping, EPSS-enriched CVE intelligence, plain-English reports. ₹499 one-time.",
     type: "website",
   },
 };

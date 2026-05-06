@@ -5,6 +5,13 @@ Aggregates all 25+ scan module outputs into a unified risk score,
 OWASP coverage map, remediation roadmap, and ASPM posture tier.
 
 This is the central intelligence layer of the enterprise scan engine.
+
+v2 additions:
+  - RRF (Risk Reduction Factor) + ALE (Annual Loss Expectancy) per finding
+  - EPSS-enriched contextual severity overrides
+  - Structured OWASP Top 10 2021 + LLM Top 10 2025 coverage maps
+  - Section-level DPDP/GDPR/PCI DSS v4 / SOC 2 compliance engines
+  - Portfolio-level risk summary (total ALE, SLA tier counts)
 """
 
 import logging
@@ -223,6 +230,33 @@ class ASPMReport:
     # Trends (if historical data available)
     score_trend: str = "stable"   # "improving", "declining", "stable"
 
+    # ── Enterprise Risk Quantification (v2) ──────────────────────────────────────
+    risk_portfolio_summary: dict = field(default_factory=dict)
+    total_ale_reduction_inr: int = 0
+    total_ale_display: str = ""
+    avg_rrf_score: float = 0.0
+    kev_findings_count: int = 0
+    epss_enriched_count: int = 0
+    severity_adjusted_count: int = 0
+    p0_count: int = 0
+    p1_count: int = 0
+    p2_count: int = 0
+    p3_count: int = 0
+
+    # ── Structured OWASP Coverage (v2) ───────────────────────────────────────────
+    owasp_top10_structured: dict = field(default_factory=dict)
+    owasp_llm_structured: dict = field(default_factory=dict)
+    owasp_coverage_score: int = 0
+    owasp_llm_coverage_score: int = 0
+
+    # ── Deep Compliance (v2) ─────────────────────────────────────────────────────
+    compliance_v2: dict = field(default_factory=dict)      # Full deep compliance object
+    dpdp_penalty_crore: int = 0
+    dpdp_risk_level: str = ""
+    gdpr_status: str = ""
+    pci_status: str = ""
+    soc2_status: str = ""
+
     generated_at: str = ""
 
 
@@ -257,7 +291,27 @@ def compute_aspm_report(
     # ── Determine posture tier ──
     tier_data = _get_posture_tier(aspm_score)
 
-    # ── OWASP Top 10 coverage map ──
+    # ── Enterprise Risk Quantification (v2) ──
+    all_findings_enriched = _enrich_findings_with_risk_metrics(all_findings, raw_findings)
+    portfolio_summary = _compute_portfolio_risk_summary(all_findings_enriched)
+
+    # ── Structured OWASP Coverage (v2 — uses structured mapper) ──
+    try:
+        from app.services.owasp_mapper import compute_owasp_top10_coverage
+        from app.services.owasp_llm_mapper import compute_owasp_llm_coverage
+
+        owasp_top10_structured = compute_owasp_top10_coverage(all_findings, enterprise_results)
+        llm_results = enterprise_results.get("llm_security") or {}
+        owasp_llm_structured = compute_owasp_llm_coverage(llm_results, all_findings)
+    except Exception as e:
+        logger.warning(f"Structured OWASP mapping failed: {e}")
+        owasp_top10_structured = {}
+        owasp_llm_structured = {}
+
+    # ── Deep Compliance Engines (v2) ──
+    compliance_v2 = _compute_deep_compliance(all_findings, raw_findings)
+
+    # ── Legacy OWASP coverage (kept for backward compat) ──
     owasp_coverage = _compute_owasp_coverage(all_findings, enterprise_results)
     covered_count = sum(1 for c in owasp_coverage if c["covered"])
 
@@ -305,8 +359,132 @@ def compute_aspm_report(
         dpdp_impact=round(dpdp_impact, 1),
         gdpr_impact=round(gdpr_impact, 1),
         pci_impact=round(pci_impact, 1),
+        # Enterprise v2
+        risk_portfolio_summary=portfolio_summary,
+        total_ale_reduction_inr=portfolio_summary.get("total_ale_reduction_inr", 0),
+        total_ale_display=portfolio_summary.get("total_ale_display", ""),
+        avg_rrf_score=portfolio_summary.get("avg_rrf_score", 0.0),
+        kev_findings_count=portfolio_summary.get("kev_findings_count", 0),
+        epss_enriched_count=portfolio_summary.get("epss_enriched_count", 0),
+        severity_adjusted_count=portfolio_summary.get("severity_adjusted_count", 0),
+        p0_count=portfolio_summary.get("p0_count", 0),
+        p1_count=portfolio_summary.get("p1_count", 0),
+        p2_count=portfolio_summary.get("p2_count", 0),
+        p3_count=portfolio_summary.get("p3_count", 0),
+        owasp_top10_structured=owasp_top10_structured,
+        owasp_llm_structured=owasp_llm_structured,
+        owasp_coverage_score=owasp_top10_structured.get("owasp_coverage_score", 0),
+        owasp_llm_coverage_score=owasp_llm_structured.get("llm_coverage_score", 0),
+        compliance_v2=compliance_v2,
+        dpdp_penalty_crore=compliance_v2.get("dpdp", {}).get("total_max_penalty_crore", 0),
+        dpdp_risk_level=compliance_v2.get("dpdp", {}).get("dpdp_risk_level", ""),
+        gdpr_status=compliance_v2.get("gdpr", {}).get("gdpr_status", ""),
+        pci_status=compliance_v2.get("pci_dss", {}).get("pci_status", ""),
+        soc2_status=compliance_v2.get("soc2", {}).get("soc2_status", ""),
         generated_at=datetime.now(timezone.utc).isoformat(),
     )
+
+
+def _enrich_findings_with_risk_metrics(
+    all_findings: list[dict],
+    raw_findings: dict[str, Any],
+) -> list[dict]:
+    """
+    Enrich each finding with RRF, ALE, SLA, and contextual severity metrics.
+    Delegates to risk_quantification module. Degrades gracefully on import error.
+    """
+    try:
+        from app.services.risk_quantification import enrich_finding_with_risk_metrics
+        for f in all_findings:
+            try:
+                enrich_finding_with_risk_metrics(
+                    finding=f,
+                    scan_data=raw_findings,
+                    epss_score=f.get("epss_score"),
+                    epss_percentile=f.get("epss_percentile"),
+                    in_kev=bool(f.get("cisa_kev") or f.get("in_cisa_kev")),
+                )
+            except Exception as e:
+                logger.debug(f"Risk enrichment failed for {f.get('key', 'unknown')}: {e}")
+    except ImportError:
+        logger.debug("risk_quantification not available — skipping RRF/ALE enrichment")
+    return all_findings
+
+
+def _compute_portfolio_risk_summary(enriched_findings: list[dict]) -> dict:
+    """Compute portfolio-level financial risk summary from enriched findings."""
+    try:
+        from app.services.risk_quantification import compute_portfolio_risk_summary
+        return compute_portfolio_risk_summary(enriched_findings)
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.warning(f"Portfolio risk summary failed: {e}")
+
+    # Fallback: basic counters
+    return {
+        "total_ale_reduction_inr": 0,
+        "total_ale_display": "",
+        "avg_rrf_score": 0.0,
+        "highest_rrf": 0.0,
+        "kev_findings_count": 0,
+        "epss_enriched_count": 0,
+        "severity_adjusted_count": 0,
+        "p0_count": sum(1 for f in enriched_findings if f.get("severity") == "CRITICAL"),
+        "p1_count": sum(1 for f in enriched_findings if f.get("severity") == "RED"),
+        "p2_count": sum(1 for f in enriched_findings if f.get("severity") == "AMBER"),
+        "p3_count": sum(1 for f in enriched_findings if f.get("severity") in ("GREEN", "INFO")),
+    }
+
+
+def _compute_deep_compliance(
+    all_findings: list[dict],
+    raw_findings: dict[str, Any],
+) -> dict:
+    """
+    Run all deep compliance engines (DPDP, GDPR, PCI DSS, SOC 2).
+    Returns a combined dict keyed by framework name.
+    Degrades gracefully if any engine fails.
+    """
+    compliance_v2: dict[str, Any] = {}
+
+    # DPDP Engine
+    try:
+        from app.services.compliance.dpdp_engine import compute_dpdp_report
+        dpdp = compute_dpdp_report(all_findings, raw_findings)
+        compliance_v2["dpdp"] = dpdp.to_dict()
+    except Exception as e:
+        logger.warning(f"DPDP engine failed: {e}")
+        compliance_v2["dpdp"] = {"error": str(e)[:100]}
+
+    # GDPR Engine
+    try:
+        from app.services.compliance.gdpr_engine import compute_gdpr_report
+        gdpr = compute_gdpr_report(all_findings, raw_findings)
+        compliance_v2["gdpr"] = gdpr.to_dict()
+    except Exception as e:
+        logger.warning(f"GDPR engine failed: {e}")
+        compliance_v2["gdpr"] = {"error": str(e)[:100]}
+
+    # PCI DSS Engine
+    try:
+        from app.services.compliance.pci_engine import compute_pci_report
+        pci = compute_pci_report(all_findings, raw_findings)
+        compliance_v2["pci_dss"] = pci.to_dict()
+    except Exception as e:
+        logger.warning(f"PCI DSS engine failed: {e}")
+        compliance_v2["pci_dss"] = {"error": str(e)[:100]}
+
+    # SOC 2 Engine
+    try:
+        from app.services.compliance.soc2_engine import compute_soc2_report
+        soc2 = compute_soc2_report(all_findings, raw_findings)
+        compliance_v2["soc2"] = soc2.to_dict()
+    except Exception as e:
+        logger.warning(f"SOC 2 engine failed: {e}")
+        compliance_v2["soc2"] = {"error": str(e)[:100]}
+
+    return compliance_v2
 
 
 def _compute_aspm_score(

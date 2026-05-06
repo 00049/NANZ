@@ -15,6 +15,42 @@ router = APIRouter(tags=["Scans"])
 redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=1.0, socket_timeout=1.0)
 
 
+@router.get("")
+async def list_scans(
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Return a paginated list of all scans (newest first)."""
+    from app.models.scan import Scan
+    from sqlalchemy import select, func
+
+    total_result = await db.execute(select(func.count()).select_from(Scan))
+    total = total_result.scalar()
+
+    result = await db.execute(
+        select(Scan).order_by(Scan.created_at.desc()).offset(offset).limit(limit)
+    )
+    scans = result.scalars().all()
+
+    return {
+        "total": total,
+        "scans": [
+            {
+                "id": str(s.id),
+                "domain": s.domain,
+                "url": s.url,
+                "status": s.status,
+                "scan_type": s.scan_type,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+                "scan_duration_ms": s.scan_duration_ms,
+            }
+            for s in scans
+        ]
+    }
+
+
 @router.post("", status_code=202)
 @limiter.limit(f"{settings.MAX_SCANS_PER_IP_PER_HOUR}/hour")
 async def create_scan(request: Request, body: ScanCreateRequest, db: AsyncSession = Depends(get_db)) -> dict:

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { scoreHistory, activityFeed, severityData as mockSeverity } from "@/lib/mock-data";
+import { scoreHistory, activityFeed } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import { Shield, Globe, AlertTriangle, TrendingUp, ArrowUpRight, ArrowDownRight, Activity, CheckCircle2, UserPlus, Share2, ExternalLink, Loader2 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
@@ -9,12 +9,13 @@ import Link from "next/link";
 import { useAuthStore } from "@/store/authStore";
 import { getCurrentUser, getDomains } from "@/lib/api";
 
-const metricCards = [
-  { label: "Domains Monitored", value: domains.filter(d => d.status === "verified").length.toString(), change: "+1 this month", trend: "up", icon: Globe, color: "text-nanz-400" },
-  { label: "Avg Security Score", value: Math.round(domains.filter(d => d.score > 0).reduce((a, b) => a + b.score, 0) / domains.filter(d => d.score > 0).length).toString(), change: "+8 pts", trend: "up", icon: Shield, color: "text-success" },
-  { label: "Critical Risks Open", value: domains.reduce((a, b) => a + b.criticalCount, 0).toString(), change: "Needs attention", trend: "down", icon: AlertTriangle, color: "text-critical" },
-  { label: "30-Day Trend", value: "+12%", change: "Improving", trend: "up", icon: TrendingUp, color: "text-nanz-400" },
+const SEVERITY_DATA = [
+  { name: 'Critical', count: 0, color: '#dc2626' },
+  { name: 'High',     count: 0, color: '#f97316' },
+  { name: 'Medium',   count: 0, color: '#eab308' },
+  { name: 'Low',      count: 0, color: '#22c55e' },
 ];
+
 
 
 const activityIcons: Record<string, any> = {
@@ -132,11 +133,11 @@ export default function DashboardPage() {
           <p className="text-xs text-text-muted mb-6">Current open findings</p>
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={mockSeverity} layout="vertical" barSize={18}>
+              <BarChart data={SEVERITY_DATA} layout="vertical" barSize={18}>
                 <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: "#5C5C6F", fontSize: 12 }} />
                 <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#8B8B9E", fontSize: 12 }} width={60} />
                 <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-                  {mockSeverity.map((entry, index) => (
+                  {SEVERITY_DATA.map((entry, index) => (
                     <Cell key={index} fill={entry.color} fillOpacity={0.8} />
                   ))}
                 </Bar>
@@ -144,7 +145,7 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
-            {mockSeverity.map((s) => (
+            {SEVERITY_DATA.map((s) => (
               <div key={s.name} className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
                 <span className="text-xs text-text-secondary">{s.name}: {s.count}</span>

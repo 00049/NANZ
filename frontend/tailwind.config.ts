@@ -109,6 +109,7 @@ const config: Config = {
         float: "float 6s ease-in-out infinite",
         shimmer: "shimmer 2s linear infinite",
         "spin-slow": "spin 8s linear infinite",
+        "critical-pulse": "criticalBorderPulse 3s ease-in-out infinite",
       },
       keyframes: {
         fadeInUp: {
@@ -130,6 +131,10 @@ const config: Config = {
         shimmer: {
           "0%": { backgroundPosition: "-200% 0" },
           "100%": { backgroundPosition: "200% 0" },
+        },
+        criticalBorderPulse: {
+          "0%, 100%": { boxShadow: "0 0 0 0 rgba(220, 38, 38, 0)" },
+          "50%": { boxShadow: "0 0 20px 4px rgba(220, 38, 38, 0.4)" },
         },
       },
     },

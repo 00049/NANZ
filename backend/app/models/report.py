@@ -68,3 +68,30 @@ class Report(Base):
 
     is_paid = Column(Boolean, default=False)
     generated_at = Column(DateTime(timezone=True), server_default=text("now()"))
+
+    # v5 — Enterprise Intelligence Engine
+    # Risk Quantification
+    ale_reduction_total = Column(Integer, nullable=True)         # Total ALE reduction (INR)
+    epss_enriched = Column(Boolean, default=False)               # Whether EPSS data was fetched
+    kev_findings_count = Column(Integer, default=0)              # CVEs in CISA KEV catalog
+    severity_adjusted_count = Column(Integer, default=0)         # Findings with contextual severity
+
+    # OWASP Coverage
+    owasp_coverage = Column(JSONB, nullable=True)                # OWASP Top 10 2021 coverage map
+    owasp_llm_coverage = Column(JSONB, nullable=True)            # OWASP LLM Top 10 2025 map
+
+    # Enterprise Compliance v2
+    compliance_report_v2 = Column(JSONB, nullable=True)          # Deep DPDP/GDPR/PCI/SOC2 report
+    dpdp_penalty_crore = Column(Integer, nullable=True)          # Max DPDP penalty exposure
+
+    # LLM Security Module
+    llm_security_data = Column(JSONB, nullable=True)             # LLM security check results
+
+    # SBOM
+    sbom_generated = Column(Boolean, default=False)
+    sbom_component_count = Column(Integer, default=0)
+
+    # BYOS Ingestion
+    ingested_findings = Column(JSONB, nullable=True)             # Findings from third-party scanners
+    ingestion_sources = Column(JSONB, nullable=True)             # List of source scanner names
+    deduplication_savings = Column(Integer, default=0)           # Findings deduplicated

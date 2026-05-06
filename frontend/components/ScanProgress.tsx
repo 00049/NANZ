@@ -24,10 +24,17 @@ const MODULES = [
 
 export default function ScanProgress() {
   const { progress } = useScanStore();
+
+  // Normalize status — backend writes 'complete', some paths write 'completed'
+  const norm = (s?: string) => {
+    if (s === 'complete' || s === 'completed') return 'done';
+    return s || 'pending';
+  };
   
-  const getStatusIcon = (status?: string) => {
+  const getStatusIcon = (raw?: string) => {
+    const status = norm(raw);
     switch(status) {
-      case 'completed': return <CheckCircle2 className="text-low w-5 h-5" />;
+      case 'done': return <CheckCircle2 className="text-low w-5 h-5" />;
       case 'failed': return <AlertTriangle className="text-medium w-5 h-5" />;
       case 'running': return <Loader2 className="text-primary w-5 h-5 animate-spin" />;
       case 'pending':
@@ -35,9 +42,10 @@ export default function ScanProgress() {
     }
   };
 
-  const getStatusText = (status?: string) => {
+  const getStatusText = (raw?: string) => {
+    const status = norm(raw);
     switch(status) {
-      case 'completed': return 'Complete';
+      case 'done': return 'Complete';
       case 'failed': return 'Degraded';
       case 'running': return 'Running...';
       case 'pending':
@@ -51,18 +59,19 @@ export default function ScanProgress() {
       <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
         {MODULES.map(mod => {
           const status = progress[mod.key] || 'pending';
+          const n = norm(status);
           return (
             <div key={mod.key} className="flex items-center justify-between p-3 rounded-md bg-background border border-card-border transition-colors hover:border-primary/50">
               <div className="flex items-center gap-3">
                 {getStatusIcon(status)}
-                <span className={`font-medium ${status === 'completed' ? 'text-text-primary' : 'text-text-muted'}`}>
+                <span className={`font-medium ${n === 'done' ? 'text-text-primary' : 'text-text-muted'}`}>
                   {mod.label}
                 </span>
               </div>
               <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                status === 'completed' ? 'bg-low/10 text-low' : 
-                status === 'failed' ? 'bg-medium/10 text-medium' :
-                status === 'running' ? 'bg-primary/10 text-primary animate-pulse' :
+                n === 'done' ? 'bg-low/10 text-low' : 
+                n === 'failed' ? 'bg-medium/10 text-medium' :
+                n === 'running' ? 'bg-primary/10 text-primary animate-pulse' :
                 'bg-card-border/50 text-text-muted'
               }`}>
                 {getStatusText(status).toUpperCase()}

@@ -18,27 +18,37 @@ const TIPS = [
 
 export default function ScanPage({ params }: { params: { scanId: string } }) {
   const router = useRouter();
-  const { scanStatus, scanUrl } = useScanStore();
+  const { scanStatus, scanUrl, scanId: storeScanId, initScan } = useScanStore();
   const { isLoading } = useScanPoll();
   const [elapsed, setElapsed] = useState(0);
   const [tipIndex, setTipIndex] = useState(0);
 
+  // Ensure store has the correct scanId from the URL (handles page refreshes)
   useEffect(() => {
-    // We already have polling running from useScanPoll hook
+    if (storeScanId !== params.scanId) {
+      // Re-initialize the store with the URL scanId so polling can start
+      initScan(params.scanId, scanUrl || params.scanId);
+    }
+  }, [params.scanId, storeScanId, scanUrl, initScan]);
+
+  // Navigate to report when scan completes
+  useEffect(() => {
     if (scanStatus === 'complete') {
       const t = setTimeout(() => {
-        router.push(`/report/${params.scanId}`);
+        router.push(`/results/${params.scanId}`);
       }, 1500);
       return () => clearTimeout(t);
     }
   }, [scanStatus, params.scanId, router]);
 
+  // Elapsed timer
   useEffect(() => {
     if (scanStatus === 'complete' || scanStatus === 'failed') return;
     const interval = setInterval(() => setElapsed(e => e + 1), 1000);
     return () => clearInterval(interval);
   }, [scanStatus]);
 
+  // Rotating tips
   useEffect(() => {
     const interval = setInterval(() => setTipIndex(i => (i + 1) % TIPS.length), 8000);
     return () => clearInterval(interval);
@@ -67,6 +77,15 @@ export default function ScanPage({ params }: { params: { scanId: string } }) {
         </div>
 
         <ScanProgress />
+
+        {scanStatus === 'complete' && (
+          <div className="mt-8 text-center">
+            <div className="flex items-center justify-center gap-2 text-low font-bold mb-2">
+              <span className="w-2 h-2 rounded-full bg-low animate-pulse" />
+              Scan complete — loading results…
+            </div>
+          </div>
+        )}
 
         {scanStatus === 'failed' && (
           <div className="mt-8 text-center bg-high/10 border border-high/30 rounded-lg p-6 max-w-lg">
