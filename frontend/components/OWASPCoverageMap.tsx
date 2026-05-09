@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { CheckCircle2, AlertTriangle, XCircle, Info } from 'lucide-react';
+import { normalizeSeverity } from '@/lib/severity';
 
 interface OWASPCoverage {
   id: string;
@@ -31,21 +32,21 @@ const SEVERITY_META: Record<string, {
     badgeBorder: 'border-red-500/30',
     label: 'Critical',
   },
-  RED: {
+  HIGH: {
     icon: <AlertTriangle className="w-4 h-4 text-orange-400 shrink-0" />,
     badgeBg: 'bg-orange-500/10',
     badgeText: 'text-orange-400',
     badgeBorder: 'border-orange-500/30',
     label: 'High',
   },
-  AMBER: {
+  MEDIUM: {
     icon: <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0" />,
     badgeBg: 'bg-yellow-500/10',
     badgeText: 'text-yellow-400',
     badgeBorder: 'border-yellow-500/30',
     label: 'Medium',
   },
-  GREEN: {
+  LOW: {
     icon: <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />,
     badgeBg: 'bg-green-500/10',
     badgeText: 'text-green-400',
@@ -71,9 +72,10 @@ const NO_FINDING_META = {
 
 function getHeatColor(severity: string, count: number): string {
   if (count === 0) return '#22c55e20';   // green, transparent
-  if (severity === 'CRITICAL') return '#ef444440';
-  if (severity === 'RED')      return '#f9731640';
-  if (severity === 'AMBER')    return '#eab30840';
+  const ns = normalizeSeverity(severity);
+  if (ns === 'CRITICAL') return '#ef444440';
+  if (ns === 'HIGH')     return '#f9731640';
+  if (ns === 'MEDIUM')   return '#eab30840';
   return '#22c55e20';
 }
 
@@ -107,7 +109,7 @@ export default function OWASPCoverageMap({ coverage, coveredCount }: OWASPCovera
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {coverage.map((cat) => {
           const meta = cat.findings_count > 0
-            ? (SEVERITY_META[cat.severity] || SEVERITY_META.INFO)
+            ? (SEVERITY_META[normalizeSeverity(cat.severity)] || SEVERITY_META.INFO)
             : NO_FINDING_META;
 
           return (

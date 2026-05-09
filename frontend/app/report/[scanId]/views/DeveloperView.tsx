@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import { Zap, Copy, CheckCircle2, Download, ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react';
 import { FullReport, ASPMReport, RiskItem, SBOMFormat, formatALE } from '@/types';
 import { downloadSBOM } from '@/lib/api';
+import { normalizeSeverity } from '@/lib/severity';
 
 // ─── Quick Win Card ───────────────────────────────────────────────────────────
 
@@ -79,9 +80,9 @@ function TechGroup({ tech, findings, onFix }: { tech: string; findings: RiskItem
           {findings.map((f, i) => (
             <div key={i} className="flex items-start gap-3 py-2">
               <div className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${
-                f.severity === 'CRITICAL' ? 'bg-red-500' :
-                f.severity === 'RED' ? 'bg-red-400' :
-                f.severity === 'AMBER' ? 'bg-amber-400' : 'bg-green-500'
+                normalizeSeverity(f.severity) === 'CRITICAL' ? 'bg-red-500' :
+                normalizeSeverity(f.severity) === 'HIGH' ? 'bg-red-400' :
+                normalizeSeverity(f.severity) === 'MEDIUM' ? 'bg-amber-400' : 'bg-green-500'
               }`} />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-slate-300 mb-1">{f.title}</div>
@@ -122,7 +123,7 @@ function DevFindingCard({ finding, onFix }: { finding: RiskItem; onFix: (f: Risk
   return (
     <div className={`rounded-xl border p-4 ${
       finding.severity === 'CRITICAL' ? 'bg-[#1a0505] border-red-800/50' :
-      finding.severity === 'RED' ? 'bg-[#120505] border-red-900/30' :
+      normalizeSeverity(finding.severity) === 'HIGH' ? 'bg-[#120505] border-red-900/30' :
       'bg-[#09090b] border-slate-800/40'
     }`}>
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-start justify-between gap-3 text-left mb-1">
@@ -384,10 +385,10 @@ export default function DeveloperView({ report, aspmData, onFixClick }: Develope
         </h2>
         <div className="space-y-3">
           {allFindings
-            .filter(f => ['CRITICAL', 'RED'].includes(f.severity))
+            .filter(f => normalizeSeverity(f.severity) === 'CRITICAL' || normalizeSeverity(f.severity) === 'HIGH')
             .map((f, i) => <DevFindingCard key={i} finding={f} onFix={handleFix} />)}
           {allFindings
-            .filter(f => !['CRITICAL', 'RED'].includes(f.severity))
+            .filter(f => normalizeSeverity(f.severity) !== 'CRITICAL' && normalizeSeverity(f.severity) !== 'HIGH')
             .map((f, i) => <DevFindingCard key={i} finding={f} onFix={handleFix} />)}
         </div>
       </section>

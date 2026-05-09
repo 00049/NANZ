@@ -3,7 +3,7 @@
 // Includes full enterprise fields: ALE, RRF, EPSS, CISA KEV, SLA, compliance
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type Severity = 'CRITICAL' | 'RED' | 'AMBER' | 'GREEN' | 'INFO';
+export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'RED' | 'AMBER' | 'GREEN' | 'INFO';
 export type VisualWeight = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type FixDifficulty = 'Easy' | 'Medium' | 'Hard';
 export type SLATier = 'P0' | 'P1' | 'P2' | 'P3';
@@ -498,9 +498,12 @@ export function aleColorClass(amount: number | undefined): string {
 export function severityToWeight(severity: Severity): VisualWeight {
   switch (severity) {
     case 'CRITICAL': return 'critical';
-    case 'RED':      return 'high';
-    case 'AMBER':    return 'medium';
-    case 'GREEN':    return 'low';
+    case 'RED':
+    case 'HIGH':     return 'high';
+    case 'AMBER':
+    case 'MEDIUM':   return 'medium';
+    case 'GREEN':
+    case 'LOW':      return 'low';
     default:         return 'info';
   }
 }

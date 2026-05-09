@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { GitBranch, Package, AlertTriangle, XCircle, ChevronDown, ChevronRight, ExternalLink, ShieldAlert } from 'lucide-react';
+import { normalizeSeverity } from '@/lib/severity';
 
 interface VulnerableLibrary {
   name: string;
@@ -45,9 +46,10 @@ interface DependencyScanProps {
 
 const SEV_BADGE: Record<string, string> = {
   CRITICAL: 'bg-red-500/10 text-red-400 border-red-500/30',
-  RED:      'bg-orange-500/10 text-orange-400 border-orange-500/30',
-  AMBER:    'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
-  GREEN:    'bg-green-500/10 text-green-400 border-green-500/30',
+  HIGH:     'bg-orange-500/10 text-orange-400 border-orange-500/30',
+  MEDIUM:   'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
+  LOW:      'bg-green-500/10 text-green-400 border-green-500/30',
+  INFO:     'bg-slate-500/10 text-slate-400 border-slate-500/30',
 };
 
 export default function DependencyScanPanel({ data }: DependencyScanProps) {
@@ -98,7 +100,7 @@ export default function DependencyScanPanel({ data }: DependencyScanProps) {
           </h3>
           <div className="grid sm:grid-cols-2 gap-2">
             {vulnLibs.map((lib, i) => {
-              const badgeClass = SEV_BADGE[lib.severity] || SEV_BADGE.AMBER;
+              const badgeClass = SEV_BADGE[normalizeSeverity(lib.severity)] || SEV_BADGE.MEDIUM;
               return (
                 <div
                   key={`${lib.name}-${i}`}
@@ -109,7 +111,7 @@ export default function DependencyScanPanel({ data }: DependencyScanProps) {
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-sm text-text-primary">{lib.name}</span>
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${badgeClass}`}>
-                        {lib.severity === 'RED' ? 'HIGH' : lib.severity}
+                        {normalizeSeverity(lib.severity)}
                       </span>
                     </div>
                     <div className="text-xs text-text-muted mt-0.5">
@@ -171,7 +173,7 @@ export default function DependencyScanPanel({ data }: DependencyScanProps) {
           </h3>
           <div className="flex flex-col gap-2">
             {packageFiles.map((pf, i) => {
-              const badgeClass = SEV_BADGE[pf.severity] || SEV_BADGE.AMBER;
+              const badgeClass = SEV_BADGE[normalizeSeverity(pf.severity)] || SEV_BADGE.MEDIUM;
               return (
                 <div key={i} className="bg-surface border border-card-border rounded-card p-3 flex items-center gap-3">
                   <Package className="w-4 h-4 text-yellow-400 shrink-0" />
@@ -180,7 +182,7 @@ export default function DependencyScanPanel({ data }: DependencyScanProps) {
                     <span className="ml-2 text-xs text-text-muted">({(pf.size_bytes / 1024).toFixed(1)} KB)</span>
                   </div>
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${badgeClass}`}>
-                    {pf.severity}
+                    {normalizeSeverity(pf.severity)}
                   </span>
                 </div>
               );

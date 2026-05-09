@@ -6,6 +6,7 @@ import {
   FullReport, ASPMReport, RiskItem, ComplianceV2,
   formatALE, aleColorClass,
 } from '@/types';
+import { normalizeSeverity } from '@/lib/severity';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 // ─── Compliance Grade helper ──────────────────────────────────────────────────
@@ -80,7 +81,7 @@ function CISOFindingCard({ finding, rank }: { finding: RiskItem; rank: number })
   return (
     <div className={`rounded-xl border p-5 ${
       finding.severity === 'CRITICAL' ? 'bg-[#450a0a]/60 border-red-800/50' :
-      finding.severity === 'RED' ? 'bg-[#1c0a0a]/60 border-red-900/40' :
+      normalizeSeverity(finding.severity) === 'HIGH' ? 'bg-[#1c0a0a]/60 border-red-900/40' :
       'bg-[#0d0d10] border-slate-800/40'
     }`}>
       <div className="flex items-start gap-4">
@@ -135,7 +136,7 @@ export default function CISOView({ report, aspmData, historicalScores }: CISOVie
   ];
 
   const urgentFindings = allFindings.filter(f =>
-    f.severity === 'CRITICAL' || f.severity === 'RED'
+    f.severity === 'CRITICAL' || normalizeSeverity(f.severity) === 'HIGH'
   );
   // Rough estimate: each finding ~3 days average
   const weeksEstimate = Math.ceil((urgentFindings.length * 3) / 5);
@@ -150,7 +151,7 @@ export default function CISOView({ report, aspmData, historicalScores }: CISOVie
   const topFindingsFinal = topFindings.length > 0
     ? topFindings
     : allFindings
-        .filter(f => ['CRITICAL', 'RED'].includes(f.severity))
+        .filter(f => normalizeSeverity(f.severity) === 'CRITICAL' || normalizeSeverity(f.severity) === 'HIGH')
         .slice(0, 5);
 
   const cv2 = aspmData?.compliance_v2 || (report.compliance_report_v2 as any);

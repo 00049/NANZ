@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { X, Copy, CheckCircle2, Clock, AlertTriangle, Shield, ExternalLink, ChevronRight } from 'lucide-react';
 import { RiskItem, formatALE, aleColorClass } from '@/types';
+import { normalizeSeverity } from '@/lib/severity';
 
 interface FixNowModalProps {
   finding: RiskItem | null;
@@ -72,9 +73,9 @@ export default function FixNowModal({ finding, onClose, onMarkFixed, onFalsePosi
 
   const SeverityColors: Record<string, string> = {
     CRITICAL: 'text-red-400 bg-red-950/50 border-red-700/50',
-    RED: 'text-red-400 bg-red-950/30 border-red-800/40',
-    AMBER: 'text-amber-400 bg-amber-950/30 border-amber-800/40',
-    GREEN: 'text-green-400 bg-green-950/30 border-green-800/40',
+    HIGH: 'text-red-400 bg-red-950/30 border-red-800/40',
+    MEDIUM: 'text-amber-400 bg-amber-950/30 border-amber-800/40',
+    LOW: 'text-green-400 bg-green-950/30 border-green-800/40',
     INFO: 'text-slate-400 bg-slate-900/30 border-slate-700/40',
   };
 
@@ -125,16 +126,16 @@ export default function FixNowModal({ finding, onClose, onMarkFixed, onFalsePosi
         {/* Header */}
         <div className={`sticky top-0 z-10 border-b ${
           finding.severity === 'CRITICAL' ? 'border-red-900/50 bg-[#1a0505]' :
-          finding.severity === 'RED' ? 'border-red-900/30 bg-[#120505]' :
-          finding.severity === 'AMBER' ? 'border-amber-900/30 bg-[#120d05]' :
+          normalizeSeverity(finding.severity) === 'HIGH' ? 'border-red-900/30 bg-[#120505]' :
+          normalizeSeverity(finding.severity) === 'MEDIUM' ? 'border-amber-900/30 bg-[#120d05]' :
           'border-slate-800/50 bg-[#0a0a0d]'
         } p-5`}>
           <div className="flex items-start justify-between gap-3 mb-4">
             <div>
               {/* Severity badge */}
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-widest border mb-2 ${SeverityColors[finding.severity] || SeverityColors.INFO}`}>
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-widest border mb-2 ${SeverityColors[normalizeSeverity(finding.severity)] || SeverityColors.INFO}`}>
                 {finding.cisa_kev ? '🚨 CISA KEV — ' : ''}
-                {finding.severity === 'RED' ? 'HIGH' : finding.severity}
+                {normalizeSeverity(finding.severity)}
               </span>
               <h2 className="text-base font-black text-slate-100 leading-snug">
                 {finding.title}

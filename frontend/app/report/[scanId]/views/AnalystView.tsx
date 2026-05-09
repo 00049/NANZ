@@ -5,6 +5,8 @@ import { ArrowRight, Shield, Zap, ChevronDown, ChevronUp, AlertTriangle, CheckCi
 import { motion } from 'framer-motion';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { FullReport, ASPMReport, RiskItem, OWASPCategory } from '@/types';
+import { normalizeSeverity } from '@/lib/severity';
+import { SeverityBadge } from '@/components/ui/SeverityBadge';
 
 // ─── EPSS Distribution Chart ──────────────────────────────────────────────────
 
@@ -99,7 +101,7 @@ function AnalystFindingsTable({ findings }: { findings: RiskItem[] }) {
 
   const sorted = useMemo(() => {
     let list = [...findings];
-    if (severityFilter !== 'ALL') list = list.filter(f => f.severity === severityFilter);
+    if (severityFilter !== 'ALL') list = list.filter(f => normalizeSeverity(f.severity) === severityFilter);
     if (search) list = list.filter(f =>
       f.title.toLowerCase().includes(search.toLowerCase()) ||
       f.cve_id?.toLowerCase().includes(search.toLowerCase())
@@ -127,8 +129,8 @@ function AnalystFindingsTable({ findings }: { findings: RiskItem[] }) {
   );
 
   const SEVERITY_COLORS: Record<string, string> = {
-    CRITICAL: 'text-red-400', RED: 'text-orange-400', AMBER: 'text-amber-400',
-    GREEN: 'text-green-500', INFO: 'text-slate-500',
+    CRITICAL: 'text-red-400', HIGH: 'text-red-400', MEDIUM: 'text-amber-400',
+    LOW: 'text-green-500', INFO: 'text-slate-500',
   };
 
   return (
@@ -141,7 +143,7 @@ function AnalystFindingsTable({ findings }: { findings: RiskItem[] }) {
           placeholder="Search findings, CVEs…"
           className="flex-1 min-w-[180px] bg-[#0a0a0d] border border-slate-800/60 rounded-lg px-3 py-1.5 text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-blue-700"
         />
-        {['ALL', 'CRITICAL', 'RED', 'AMBER', 'GREEN'].map(s => (
+        {['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].map(s => (
           <button
             key={s}
             onClick={() => setSeverityFilter(s)}
@@ -151,7 +153,7 @@ function AnalystFindingsTable({ findings }: { findings: RiskItem[] }) {
                 : 'bg-slate-900/50 border border-slate-800/50 text-slate-500 hover:text-slate-300'
             }`}
           >
-            {s === 'RED' ? 'HIGH' : s === 'AMBER' ? 'MED' : s}
+            {s}
           </button>
         ))}
       </div>
@@ -178,8 +180,8 @@ function AnalystFindingsTable({ findings }: { findings: RiskItem[] }) {
                   {f.module && <div className="text-[10px] text-slate-600 font-mono">{f.module}</div>}
                 </td>
                 <td className="px-3 py-2.5">
-                  <span className={`font-bold ${SEVERITY_COLORS[f.severity] || 'text-slate-500'}`}>
-                    {f.severity === 'RED' ? 'HIGH' : f.severity === 'AMBER' ? 'MED' : f.severity}
+                  <span className={`font-bold ${SEVERITY_COLORS[normalizeSeverity(f.severity)] || 'text-slate-500'}`}>
+                    {normalizeSeverity(f.severity)}
                   </span>
                 </td>
                 <td className="px-3 py-2.5">
@@ -239,7 +241,7 @@ function OWASPGrid({ categories }: { categories: Record<string, OWASPCategory> |
         const bg =
           status === 'NOT_TESTED' ? 'bg-slate-900/30 border-slate-800/30' :
           cat.findings_count === 0 ? 'bg-green-950/20 border-green-900/30' :
-          cat.findings_count > 0 && (cat.highest_severity === 'CRITICAL' || cat.highest_severity === 'RED')
+          cat.findings_count > 0 && (normalizeSeverity(cat.highest_severity || '') === 'CRITICAL' || normalizeSeverity(cat.highest_severity || '') === 'HIGH')
             ? 'bg-red-950/30 border-red-800/40'
             : 'bg-amber-950/20 border-amber-800/30';
         const icon =

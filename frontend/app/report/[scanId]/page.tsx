@@ -1,14 +1,20 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   getFullReport, getRoadmap, getComplianceReport,
   getBrandThreats, getEnterpriseData, getASPMScore,
   submitFindingFeedback,
 } from '@/lib/api';
-import { useScanStore } from '@/store/scanStore';
+import { useReportAccess } from '@/hooks/useReportAccess';
+import { useAuthStore } from '@/store/authStore';
 import { FullReport, RemediationRoadmap as RoadmapType, RiskItem, ASPMReport, severityToWeight } from '@/types';
+import { normalizeSeverity, sortBySeverity } from '@/lib/severity';
+import { SeverityBadge } from '@/components/ui/SeverityBadge';
+import { useFindingsKeyboard } from '@/hooks/useFindingsKeyboard';
+import KeyboardShortcutsModal from '@/components/dashboard/KeyboardShortcutsModal';
+import { toast } from 'sonner';
 
 // Components
 import Navbar from '@/components/Navbar';
@@ -22,6 +28,8 @@ import SmartSummaryBar from '@/components/SmartSummaryBar';
 import AlertFatigueGuard from '@/components/AlertFatigueGuard';
 import ScanModuleStatus from '@/components/ScanModuleStatus';
 import RoleSelector, { useRole } from '@/components/RoleSelector';
+import ReportTopBar from '@/components/ReportTopBar';
+import ReportSidebar from '@/components/ReportSidebar';
 import TechInventory from '@/components/TechInventory';
 import RemediationRoadmap from '@/components/RemediationRoadmap';
 import EmailSecurityGrade from '@/components/EmailSecurityGrade';
@@ -40,25 +48,34 @@ import DeveloperView from './views/DeveloperView';
 
 import {
   Loader2, Download, ShieldAlert, CheckCircle2,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Keyboard,
 } from 'lucide-react';
 
 // ─── Sidebar nav ──────────────────────────────────────────────────────────────
 
 const NAV_SECTIONS = [
-  { id: 'overview',               label: 'Overview' },
-  { id: 'role-view',              label: 'Role View' },
-  { id: 'aspm-posture',           label: 'ASPM Posture' },
+  { id: 'overview', label: 'Overview' },
+  { id: 'role-view', label: 'Role View' },
+  { id: 'aspm-posture', label: 'ASPM Posture' },
   { id: 'enterprise-remediation', label: 'Remediation' },
-  { id: 'owasp-coverage',         label: 'OWASP Coverage' },
-  { id: 'dependency-scan',        label: 'Dependencies' },
-  { id: 'llm-security',           label: 'AI/LLM Security' },
-  { id: 'compliance',             label: 'Compliance' },
-  { id: 'brand-threats',          label: 'Brand Protection' },
-  { id: 'email-security',         label: 'Email Security' },
-  { id: 'technology-stack',       label: 'Tech Stack' },
-  { id: 'all-findings',           label: 'All Findings' },
+  { id: 'owasp-coverage', label: 'OWASP Coverage' },
+  { id: 'dependency-scan', label: 'Dependencies' },
+  { id: 'llm-security', label: 'AI/LLM Security' },
+  { id: 'compliance', label: 'Compliance' },
+  { id: 'brand-threats', label: 'Brand Protection' },
+  { id: 'email-security', label: 'Email Security' },
+  { id: 'technology-stack', label: 'Tech Stack' },
+  { id: 'all-findings', label: 'All Findings' },
 ];
+
+// ─── Severity escalation helper ───────────────────────────────────────────────
+const SEVERITY_LADDER = ['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+function escalateSeverity(current: string): string {
+  const ns = normalizeSeverity(current);
+  const idx = SEVERITY_LADDER.indexOf(ns as any);
+  if (idx < 0 || idx >= SEVERITY_LADDER.length - 1) return ns;
+  return SEVERITY_LADDER[idx + 1];
+}
 
 // ─── Progressive disclosure findings list ─────────────────────────────────────
 
@@ -70,65 +87,142 @@ function FindingsList({
   onFixClick: (f: RiskItem) => void;
 }) {
   const [showLow, setShowLow] = useState(false);
+  const [acknowledged, setAcknowledged] = useState<Set<number>>(new Set());
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const critical = findings.filter(f => f.severity === 'CRITICAL');
-  const high = findings.filter(f => f.severity === 'RED');
-  const medium = findings.filter(f => f.severity === 'AMBER');
-  const lowAndInfo = findings.filter(f => f.severity === 'GREEN' || f.severity === 'INFO');
+  // Build flat list of all visible findings for keyboard nav
+  const critical = findings.filter(f => normalizeSeverity(f.severity) === 'CRITICAL');
+  const high = findings.filter(f => normalizeSeverity(f.severity) === 'HIGH');
+  const medium = findings.filter(f => normalizeSeverity(f.severity) === 'MEDIUM');
+  const lowAndInfo = findings.filter(f => {
+    const ns = normalizeSeverity(f.severity);
+    return ns === 'LOW' || ns === 'INFO';
+  });
+
+  const flatFindings = useMemo(() => {
+    const list = [...critical, ...high, ...medium];
+    if (showLow) list.push(...lowAndInfo);
+    return list;
+  }, [critical, high, medium, lowAndInfo, showLow]);
+
+  // Map from flat index to original findings index
+  const findingToFlatIdx = useCallback((f: RiskItem) => {
+    return flatFindings.indexOf(f);
+  }, [flatFindings]);
+
+  const handleEscalate = useCallback((finding: RiskItem) => {
+    const newSev = escalateSeverity(finding.severity);
+    if (newSev === normalizeSeverity(finding.severity)) {
+      toast('Already at maximum severity');
+      return;
+    }
+    toast.success(`Finding escalated to ${newSev} (local only — will sync when available)`);
+  }, []);
+
+  const handleAcknowledge = useCallback((finding: RiskItem) => {
+    const idx = flatFindings.indexOf(finding);
+    if (idx >= 0) {
+      setAcknowledged(prev => { const n = new Set(prev); n.add(idx); return n; });
+      toast.success('Finding acknowledged (local only — will sync when available)');
+    }
+  }, [flatFindings]);
+
+  const { selectedIndex, expandedIndex, showHelp, setShowHelp } = useFindingsKeyboard({
+    findings: flatFindings,
+    onEscalate: handleEscalate,
+    onAcknowledge: handleAcknowledge,
+    containerRef: containerRef as React.RefObject<HTMLElement>,
+    enabled: flatFindings.length > 0,
+  });
+
+  const renderFinding = (f: RiskItem, origIdx: number, weight: string) => {
+    const flatIdx = findingToFlatIdx(f);
+    const isSelected = selectedIndex === flatIdx;
+    const isAck = acknowledged.has(flatIdx);
+
+    return (
+      <div
+        key={origIdx}
+        data-finding-row
+        data-index={flatIdx}
+        data-severity={normalizeSeverity(f.severity)}
+        style={{
+          borderLeft: isSelected ? '2px solid #00A8FF' : '2px solid transparent',
+          backgroundColor: isSelected ? '#0F1520' : 'transparent',
+          borderRadius: '8px',
+          transition: 'all 150ms ease',
+          position: 'relative',
+        }}
+      >
+        <RiskCard
+          finding={f}
+          visualWeight={weight as any}
+          onFixClick={onFixClick}
+        />
+        {isAck && (
+          <span className="absolute top-3 right-3 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: '#6B7280', color: '#FFFFFF', opacity: 0.7 }}>
+            Reviewed
+          </span>
+        )}
+      </div>
+    );
+  };
 
   const renderSection = (
     id: string,
-    label: string,
+    severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO',
+    subtitle: string,
     items: RiskItem[],
-    defaultExpanded = true,
   ) => {
     if (items.length === 0) return null;
     return (
-      <div id={id} className="scroll-mt-8 space-y-3">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600 px-1">
-          {label} ({items.length})
+      <div id={id} className="scroll-mt-32 space-y-3">
+        <div className="flex items-center gap-2 px-1">
+          <SeverityBadge severity={severity} size="sm" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">
+            {subtitle} ({items.length})
+          </span>
         </div>
-        {items.map((f, i) => (
-          <div key={i} data-severity={f.severity}>
-            <RiskCard
-              finding={f}
-              visualWeight={severityToWeight(f.severity)}
-              onFixClick={onFixClick}
-            />
-          </div>
-        ))}
+        {items.map((f, i) => renderFinding(f, i, severityToWeight(f.severity)))}
       </div>
     );
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" ref={containerRef}>
       <SmartSummaryBar findings={findings} />
 
-      {renderSection('findings-critical', '🔴 Critical — Fix Immediately', critical)}
-      {renderSection('findings-high', '🟠 High — Fix This Week', high)}
+      {/* Keyboard hint bar */}
+      {flatFindings.length > 3 && (
+        <div className="flex items-center justify-between px-2 py-1.5 rounded-lg" style={{ backgroundColor: '#111111', border: '1px solid #1E1E1E' }}>
+          <span className="text-[11px]" style={{ color: '#6B7280' }}>
+            <kbd className="px-1 py-0.5 rounded text-[10px] font-mono" style={{ backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#9CA3AF' }}>j</kbd>/<kbd className="px-1 py-0.5 rounded text-[10px] font-mono" style={{ backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#9CA3AF' }}>k</kbd> navigate · <kbd className="px-1 py-0.5 rounded text-[10px] font-mono" style={{ backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#9CA3AF' }}>e</kbd> escalate · <kbd className="px-1 py-0.5 rounded text-[10px] font-mono" style={{ backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#9CA3AF' }}>a</kbd> acknowledge · <kbd className="px-1 py-0.5 rounded text-[10px] font-mono" style={{ backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#9CA3AF' }}>?</kbd> all shortcuts
+          </span>
+          <button onClick={() => setShowHelp(true)} className="p-1 rounded hover:bg-white/5 transition-colors" style={{ color: '#6B7280' }}>
+            <Keyboard className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
-      {/* AMBER — collapsed by default */}
+      {renderSection('findings-critical', 'CRITICAL', 'Fix Immediately', critical)}
+      {renderSection('findings-high', 'HIGH', 'Fix This Week', high)}
+
+      {/* MEDIUM */}
       {medium.length > 0 && (
-        <div id="findings-medium" className="scroll-mt-8 space-y-3">
-          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600 px-1">
-            🟡 Medium — Address This Month ({medium.length})
+        <div id="findings-medium" className="scroll-mt-32 space-y-3">
+          <div className="flex items-center gap-2 px-1">
+            <SeverityBadge severity="MEDIUM" size="sm" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">
+              Address This Month ({medium.length})
+            </span>
           </div>
-          {medium.map((f, i) => (
-            <div key={i} data-severity={f.severity}>
-              <RiskCard
-                finding={f}
-                visualWeight="medium"
-                onFixClick={onFixClick}
-              />
-            </div>
-          ))}
+          {medium.map((f, i) => renderFinding(f, i, 'medium'))}
         </div>
       )}
 
       {/* Low + Info — hidden behind toggle */}
       {lowAndInfo.length > 0 && (
-        <div className="scroll-mt-8">
+        <div className="scroll-mt-32">
           <button
             onClick={() => setShowLow(s => !s)}
             className="flex items-center gap-2 text-xs font-medium text-slate-600 hover:text-slate-400 transition-colors mb-3 px-1"
@@ -140,19 +234,13 @@ function FindingsList({
           </button>
           {showLow && (
             <div className="space-y-2">
-              {lowAndInfo.map((f, i) => (
-                <div key={i} data-severity={f.severity}>
-                  <RiskCard
-                    finding={f}
-                    visualWeight={f.severity === 'INFO' ? 'info' : 'low'}
-                    onFixClick={onFixClick}
-                  />
-                </div>
-              ))}
+              {lowAndInfo.map((f, i) => renderFinding(f, i, normalizeSeverity(f.severity) === 'INFO' ? 'info' : 'low'))}
             </div>
           )}
         </div>
       )}
+
+      <KeyboardShortcutsModal open={showHelp} onClose={() => setShowHelp(false)} />
     </div>
   );
 }
@@ -169,22 +257,36 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
   const [enterpriseLoading, setEnterpriseLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [activeModal, setActiveModal] = useState<RiskItem | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [role, setRole] = useRole();
-  const { reportJWT } = useScanStore();
+  const { canViewFull, level } = useReportAccess(params.scanId);
   const router = useRouter();
+  const token = useAuthStore((state) => state.token);
 
   useEffect(() => {
+    // If we've finished checking and they don't have access, kick them back to home
+    if (level !== 'loading' && level !== 'pending' && !canViewFull) {
+      router.replace('/');
+    }
+  }, [level, canViewFull, router]);
+
+  useEffect(() => {
+    if (!token) {
+      router.replace(`/auth/login?returnUrl=/report/${params.scanId}`);
+      return;
+    }
+
     const fetchData = async () => {
       try {
         const [rep, road, comp, brand] = await Promise.allSettled([
-          getFullReport(params.scanId, ''),
-          getRoadmap(params.scanId, ''),
+          getFullReport(params.scanId, token),
+          getRoadmap(params.scanId, token),
           getComplianceReport(params.scanId),
           getBrandThreats(params.scanId),
         ]);
-        if (rep.status === 'fulfilled')   setReport(rep.value);
-        if (road.status === 'fulfilled')  setRoadmapData(road.value);
-        if (comp.status === 'fulfilled')  setCompliance(comp.value);
+        if (rep.status === 'fulfilled') setReport(rep.value);
+        if (road.status === 'fulfilled') setRoadmapData(road.value);
+        if (comp.status === 'fulfilled') setCompliance(comp.value);
         if (brand.status === 'fulfilled') setBrandThreats(brand.value);
       } catch (err) {
         console.error('Failed to fetch report data:', err);
@@ -211,8 +313,10 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
         setEnterpriseLoading(false);
       }
     };
-    fetchData();
-  }, [params.scanId]);
+    if (canViewFull) {
+      fetchData();
+    }
+  }, [params.scanId, canViewFull]);
 
   const handleFixClick = useCallback((finding: RiskItem) => {
     setActiveModal(finding);
@@ -265,7 +369,7 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
     return true;
   });
 
-  const criticalCount = findings.filter(f => f.severity === 'CRITICAL').length;
+  const criticalCount = findings.filter(f => normalizeSeverity(f.severity) === 'CRITICAL').length;
 
   // Module status from enterprise or ASPM data
   const modules = enterpriseData?.module_status || aspmData?.modules_tested?.map((m: string) => ({
@@ -277,36 +381,18 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
   return (
     <>
       <Navbar />
-      <main className="flex-1 bg-[#030303] pb-20 print:bg-white print:text-black">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-10 flex flex-col lg:flex-row gap-10">
-
-          {/* ─── LEFT SIDEBAR ─────────────────────────────────────────── */}
-          <div className="hidden lg:block w-60 shrink-0 print:hidden">
-            <div className="sticky top-8 flex flex-col gap-1">
-              <h3 className="text-[10px] text-slate-600 font-bold uppercase tracking-widest mb-3">Sections</h3>
-              {NAV_SECTIONS.map(section => (
-                <a
-                  key={section.id}
-                  href={`#${section.id}`}
-                  className="text-xs font-medium text-slate-500 hover:text-slate-200 py-1.5 px-3 rounded-lg hover:bg-slate-900/50 transition-colors"
-                >
-                  {section.label}
-                </a>
-              ))}
-              <button
-                onClick={() => window.print()}
-                className="mt-6 flex items-center gap-2 text-xs font-bold text-blue-400 hover:text-blue-300 p-3 bg-blue-950/20 rounded-xl transition-colors border border-blue-900/30"
-              >
-                <Download className="w-3.5 h-3.5" /> Download PDF
-              </button>
-            </div>
-          </div>
+      <ReportSidebar
+        isOpen={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+      />
+      <main className="flex-1 bg-[#030303] pt-16 lg:pl-[260px] pb-20 print:bg-white print:text-black print:pt-0 print:pl-0">
+        <div className="max-w-5xl mx-auto px-4 md:px-6 py-10 flex flex-col gap-14">
 
           {/* ─── MAIN CONTENT ─────────────────────────────────────────── */}
           <div className="flex-1 min-w-0 flex flex-col gap-14">
 
             {/* ── OVERVIEW ── */}
-            <section id="overview" className="scroll-mt-8">
+            <section id="overview" className="scroll-mt-32">
               <h1 className="text-2xl font-black text-slate-100 mb-6 border-b border-slate-800/60 pb-4">
                 Security Report
               </h1>
@@ -348,9 +434,9 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
                   <div className="grid grid-cols-4 gap-2">
                     {[
                       { label: 'Critical', value: report.critical_count || 0, cls: 'text-red-400 bg-red-950/30 border-red-800/40' },
-                      { label: 'High',     value: report.high_count    || 0, cls: 'text-orange-400 bg-orange-950/20 border-orange-900/30' },
-                      { label: 'Medium',   value: report.medium_count  || 0, cls: 'text-amber-400 bg-amber-950/20 border-amber-800/30' },
-                      { label: 'Low',      value: report.low_count     || 0, cls: 'text-slate-500 bg-slate-900/30 border-slate-800/40' },
+                      { label: 'High', value: report.high_count || 0, cls: 'text-orange-400 bg-orange-950/20 border-orange-900/30' },
+                      { label: 'Medium', value: report.medium_count || 0, cls: 'text-amber-400 bg-amber-950/20 border-amber-800/30' },
+                      { label: 'Low', value: report.low_count || 0, cls: 'text-slate-500 bg-slate-900/30 border-slate-800/40' },
                     ].map(stat => (
                       <div key={stat.label} className={`rounded-xl border p-3 text-center ${stat.cls}`}>
                         <div className="text-2xl font-black">{stat.value}</div>
@@ -363,10 +449,9 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
                   {(report.total_ale_reduction_inr || aspmData?.total_ale_reduction_inr) && (
                     <div className="bg-[#09090b] p-4 rounded-2xl border border-slate-800/50">
                       <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Total Risk Reduction Available</div>
-                      <div className={`text-xl font-black ${
-                        (report.total_ale_reduction_inr || 0) >= 5_000_000 ? 'text-red-400' :
+                      <div className={`text-xl font-black ${(report.total_ale_reduction_inr || 0) >= 5_000_000 ? 'text-red-400' :
                         (report.total_ale_reduction_inr || 0) >= 1_000_000 ? 'text-amber-400' : 'text-blue-400'
-                      }`}>
+                        }`}>
                         {report.total_ale_display || aspmData?.total_ale_display || '—'}
                       </div>
                       <div className="text-xs text-slate-600 mt-0.5">if all findings remediated</div>
@@ -377,11 +462,11 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
             </section>
 
             {/* ── ROLE SELECTOR + ROLE VIEW ── */}
-            <section id="role-view" className="scroll-mt-8">
+            <section id="role-view" className="scroll-mt-32">
               <div className="flex items-center justify-between mb-6 border-b border-slate-800/60 pb-4">
                 <h2 className="text-xl font-black text-slate-100">
                   {role === 'ciso' ? 'Executive Risk View' :
-                   role === 'analyst' ? 'Threat Intelligence View' : 'Developer Fix View'}
+                    role === 'analyst' ? 'Threat Intelligence View' : 'Developer Fix View'}
                 </h2>
                 <RoleSelector value={role} onChange={setRole} />
               </div>
@@ -399,7 +484,7 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
 
             {/* ── ASPM POSTURE ── */}
             {enterpriseLoading && !aspmData ? (
-              <section id="aspm-posture" className="scroll-mt-8">
+              <section id="aspm-posture" className="scroll-mt-32">
                 <div className="bg-[#09090b] border border-slate-800/50 rounded-2xl p-8 flex items-center gap-4">
                   <Loader2 className="w-6 h-6 text-blue-500 animate-spin shrink-0" />
                   <div>
@@ -410,32 +495,46 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
               </section>
             ) : (
               <>
-                <ASPMScorePanel data={aspmData as any} />
-                <EnterpriseRemediation
-                  roadmap={aspmData?.remediation_roadmap as any}
-                  quickWins={aspmData?.quick_wins as any}
-                  immediateActions={aspmData?.immediate_actions as any}
-                />
-                <OWASPCoverageMap
-                  coverage={aspmData?.owasp_coverage as any}
-                  coveredCount={aspmData?.owasp_covered_count}
-                />
-                <DependencyScanPanel data={enterpriseData?.dependency} />
-                <LLMSecurityPanel data={enterpriseData?.llm_security} />
+                <section id="aspm-posture" className="scroll-mt-32">
+                  <ASPMScorePanel data={aspmData as any} />
+                  <EnterpriseRemediation
+                    roadmap={aspmData?.remediation_roadmap as any}
+                    quickWins={aspmData?.quick_wins as any}
+                    immediateActions={aspmData?.immediate_actions as any}
+                  />
+                </section>
+                <section id="owasp-coverage" className="scroll-mt-32">
+                  <OWASPCoverageMap
+                    coverage={aspmData?.owasp_coverage as any}
+                    coveredCount={aspmData?.owasp_covered_count}
+                  />
+                </section>
+                <section id="dependency-scan" className="scroll-mt-32">
+                  <DependencyScanPanel data={enterpriseData?.dependency} />
+                </section>
+                <section id="llm-security" className="scroll-mt-32">
+                  <LLMSecurityPanel data={enterpriseData?.llm_security} />
+                </section>
               </>
             )}
 
             {/* ── LEGACY ROADMAP ── */}
-            <RemediationRoadmap roadmap={roadmap} />
+            <section id="enterprise-remediation" className="scroll-mt-32">
+              <RemediationRoadmap roadmap={roadmap} />
+            </section>
 
             {/* ── COMPLIANCE ── */}
-            <ComplianceReport data={compliance} />
+            <section id="compliance" className="scroll-mt-32">
+              <ComplianceReport data={compliance} />
+            </section>
 
             {/* ── BRAND THREATS ── */}
-            <BrandThreatCard data={brandThreats} />
+            <section id="brand-threats" className="scroll-mt-32">
+              <BrandThreatCard data={brandThreats} />
+            </section>
 
             {/* ── EMAIL SECURITY ── */}
-            <section id="email-security" className="scroll-mt-8">
+            <section id="email-security" className="scroll-mt-32">
               <h2 className="text-xl font-black text-slate-100 mb-5 border-b border-slate-800/60 pb-3">Email Security</h2>
               <EmailSecurityGrade
                 grade={(report as any).domain_reports?.email?.grade || 'N/A'}
@@ -444,13 +543,13 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
             </section>
 
             {/* ── TECH INVENTORY ── */}
-            <section id="technology-stack" className="scroll-mt-8">
+            <section id="technology-stack" className="scroll-mt-32">
               <h2 className="text-xl font-black text-slate-100 mb-5 border-b border-slate-800/60 pb-3">Technology Stack & CVEs</h2>
               <TechInventory inventory={(report as any).tech_inventory || (report as any).domain_reports?.tech || []} />
             </section>
 
             {/* ── ALL FINDINGS (progressive disclosure) ── */}
-            <section id="all-findings" className="scroll-mt-8">
+            <section id="all-findings" className="scroll-mt-32">
               <h2 className="text-xl font-black text-slate-100 mb-2 border-b border-slate-800/60 pb-3">
                 All Security Findings
                 <span className="ml-3 text-sm font-normal text-slate-500">({findings.length})</span>

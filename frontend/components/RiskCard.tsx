@@ -3,6 +3,8 @@
 import { useState, useCallback, useMemo } from 'react';
 import { ShieldAlert, AlertTriangle, Info, ShieldCheck, Zap, Copy, CheckCircle2 } from 'lucide-react';
 import { RiskItem, VisualWeight, FixDifficulty, SLATier, formatALE, aleColorClass, severityToWeight } from '@/types';
+import { normalizeSeverity } from '@/lib/severity';
+import { SeverityBadge } from '@/components/ui/SeverityBadge';
 import FindingPriorityBadge from './FindingPriorityBadge';
 
 // ─── Visual weight config ──────────────────────────────────────────────────────
@@ -138,33 +140,20 @@ function getFixButtonConfig(
   );
 }
 
-// ─── Severity badge ────────────────────────────────────────────────────────────
+// ─── Severity badge (delegated to shared component) ────────────────────────────────────────
 
-function SeverityBadge({ severity, cfg }: { severity: string; cfg: typeof WEIGHT_CONFIG[VisualWeight] }) {
-  const icon = () => {
-    switch (severity) {
-      case 'CRITICAL':
-      case 'RED': return <ShieldAlert className="w-3 h-3" />;
-      case 'AMBER': return <AlertTriangle className="w-3 h-3" />;
-      case 'GREEN': return <ShieldCheck className="w-3 h-3" />;
-      default: return <Info className="w-3 h-3" />;
-    }
-  };
-  const label = severity === 'RED' ? 'HIGH' : severity === 'AMBER' ? 'MEDIUM' : severity;
+function RiskCardSeverityBadge({ severity, cfg }: { severity: string; cfg: typeof WEIGHT_CONFIG[VisualWeight] }) {
+  const normalized = normalizeSeverity(severity);
   return (
-    <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest border ${cfg.badgeBg} ${cfg.badgeText}`}>
+    <div className="inline-flex items-center gap-1.5">
       {/* Animated dot for critical */}
-      <span className="relative flex h-2 w-2">
-        <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${cfg.dotClass} ${severity === 'CRITICAL' ? 'bg-red-400' : ''}`} />
-        <span className={`relative inline-flex rounded-full h-2 w-2 ${
-          severity === 'CRITICAL' ? 'bg-red-500' :
-          severity === 'RED' ? 'bg-red-400' :
-          severity === 'AMBER' ? 'bg-amber-400' :
-          severity === 'GREEN' ? 'bg-green-600' : 'bg-slate-600'
-        }`} />
-      </span>
-      {icon()}
-      {label}
+      {normalized === 'CRITICAL' && (
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+        </span>
+      )}
+      <SeverityBadge severity={normalized} size="sm" />
     </div>
   );
 }
@@ -249,7 +238,7 @@ export default function RiskCard({
         {/* Header row */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-2 flex-wrap">
-            <SeverityBadge severity={item.severity} cfg={cfg} />
+            <RiskCardSeverityBadge severity={item.severity} cfg={cfg} />
 
             {/* CISA KEV badge */}
             {item.cisa_kev && (

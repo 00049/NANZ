@@ -390,7 +390,7 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                 except (ConnectionError, TimeoutError, OSError, ValueError):
                     pass
 
-        # ── Phase 1: WAF check (runs first, result shared) ──
+
         waf_raw = await wrap_check(
             "waf_check",
             waf_check.run(url, domain, ip_address),
@@ -398,7 +398,7 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
         )
         waf_data = waf_raw.get("data", {})
 
-        # ── Phase 2: All other checks in parallel ──
+
         results = await asyncio.gather(
             wrap_check("ssl_check", ssl_check.run(domain), lambda: ssl_check.SSLResult(error="unavailable")),
             wrap_check("headers_check", headers_check.run(url), lambda: headers_check.HeadersResult(error="unavailable")),

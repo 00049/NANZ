@@ -36,8 +36,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const logout = useAuthStore((state) => state.logout);
   const [user, setUser] = useState<{name: string, email: string} | null>(null);
   
-  // Example alerts count
-  const unreadAlerts = 2;
+  // TODO: Wire to real notifications API when built.
 
   useEffect(() => {
     if (token) {
@@ -84,9 +83,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Scan CTA */}
         <div className="px-3 pt-4 pb-2">
-          <Link href="/" className={cn(
+          <Link href="/dashboard/new-scan" className={cn(
             "flex items-center gap-2 px-3 py-2.5 rounded-btn bg-nanz-gradient text-white text-sm font-medium hover:opacity-90 transition-opacity",
-            collapsed ? "justify-center" : ""
+            collapsed ? "justify-center" : "",
+            pathname === "/dashboard/new-scan" ? "border border-[#00A8FF]" : "border border-transparent"
           )}>
             <Plus className="w-4 h-4 flex-shrink-0" />
             {!collapsed && <span>New Scan</span>}
@@ -155,7 +155,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <NanzLogo size="sm" />
         <Link href="/dashboard" className="relative">
           <Bell className="w-5 h-5 text-text-secondary" />
-          {unreadAlerts > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-critical text-[10px] font-bold text-white flex items-center justify-center">{unreadAlerts}</span>}
         </Link>
       </div>
 
@@ -169,7 +168,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <button onClick={() => setMobileOpen(false)} className="text-text-muted"><X className="w-5 h-5" /></button>
             </div>
             <div className="px-3 pt-4 pb-2">
-              <Link href="/" className="flex items-center gap-2 px-3 py-2.5 rounded-btn bg-nanz-gradient text-white text-sm font-medium" onClick={() => setMobileOpen(false)}>
+              <Link href="/dashboard/new-scan" className={cn(
+                "flex items-center gap-2 px-3 py-2.5 rounded-btn bg-nanz-gradient text-white text-sm font-medium",
+                pathname === "/dashboard/new-scan" ? "border border-[#00A8FF]" : "border border-transparent"
+              )} onClick={() => setMobileOpen(false)}>
                 <Plus className="w-4 h-4" /> New Scan
               </Link>
             </div>
@@ -215,7 +217,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="flex items-center gap-4">
             <Link href="/settings/notifications" className="relative p-2 rounded-btn text-text-muted hover:text-text-secondary hover:bg-surface transition-colors">
               <Bell className="w-4.5 h-4.5" />
-              {unreadAlerts > 0 && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-critical" />}
             </Link>
             <div className="w-px h-6 bg-surface-border" />
             <div className="flex items-center gap-2.5 cursor-pointer">

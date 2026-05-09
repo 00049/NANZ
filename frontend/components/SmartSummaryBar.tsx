@@ -3,6 +3,7 @@
 import { useRef } from 'react';
 import { AlertCircle, Clock, Calendar } from 'lucide-react';
 import { RiskItem } from '@/types';
+import { normalizeSeverity } from '@/lib/severity';
 
 interface SmartSummaryBarProps {
   findings: RiskItem[];
@@ -10,14 +11,15 @@ interface SmartSummaryBarProps {
 }
 
 export default function SmartSummaryBar({ findings, onPillClick }: SmartSummaryBarProps) {
-  const immediate = findings.filter(f => f.severity === 'CRITICAL' || f.sla_tier === 'P0');
+  const immediate = findings.filter(f => normalizeSeverity(f.severity) === 'CRITICAL' || f.sla_tier === 'P0');
   const thisWeek = findings.filter(f =>
-    (f.severity === 'RED' || f.sla_tier === 'P1') &&
-    f.severity !== 'CRITICAL' && f.sla_tier !== 'P0',
+    (normalizeSeverity(f.severity) === 'HIGH' || f.sla_tier === 'P1') &&
+    normalizeSeverity(f.severity) !== 'CRITICAL' && f.sla_tier !== 'P0',
   );
-  const thisMonth = findings.filter(f =>
-    f.severity === 'AMBER' || f.sla_tier === 'P2' || f.sla_tier === 'P3',
-  );
+  const thisMonth = findings.filter(f => {
+    const ns = normalizeSeverity(f.severity);
+    return ns === 'MEDIUM' || f.sla_tier === 'P2' || f.sla_tier === 'P3';
+  });
 
   if (findings.length === 0) return null;
 

@@ -2,11 +2,11 @@ import { ScanResponse, ScanProgress, PreviewResponse, FullReport, RemediationRoa
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-export async function startScan(url: string): Promise<ScanResponse> {
+export async function startScan(url: string, options?: any): Promise<ScanResponse> {
   const res = await fetch(`${API_BASE}/api/scans`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url, options }),
   });
   if (!res.ok) throw new Error('Failed to start scan');
   return res.json();

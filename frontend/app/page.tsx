@@ -9,10 +9,12 @@ import {
 } from 'lucide-react';
 import { startScan } from '@/lib/api';
 import { useScanStore } from '@/store/scanStore';
+import { useAuthStore } from '@/store/authStore';
 import { scanUrlSchema } from '@/lib/validations';
 import { NanzLogo } from '@/components/ui/NanzLogo';
 import Navbar from '@/components/Navbar';
 import Link from 'next/link';
+import { useEffect } from 'react';
 
 // Lazy-loaded interactive sections
 import AnimatedCounter from '@/components/AnimatedCounter';
@@ -97,8 +99,22 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+
   const router = useRouter();
   const { initScan } = useScanStore();
+  const { token, user, setPendingScanUrl } = useAuthStore();
+
+  // Check URL for scan param
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+
+      const scanParam = params.get('scan');
+      if (scanParam) {
+        setUrl(scanParam);
+      }
+    }
+  }, []);
 
   const handleScan = async () => {
     setError('');
@@ -108,11 +124,33 @@ export default function HomePage() {
     }
     const parsed = scanUrlSchema.safeParse({ url: inputUrl });
     if (!parsed.success) { setError('Please enter a valid URL (e.g., https://example.com)'); return; }
+
+    // AUTH GATE
+    if (!token || !user) {
+      setPendingScanUrl(parsed.data.url);
+      router.push('/auth/login?redirect=scan_queue');
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await startScan(parsed.data.url);
       initScan(res.scan_id, parsed.data.url);
-      router.push(`/scan/${res.scan_id}`);
+
+      // Save active scan to localStorage
+      localStorage.setItem('shieldcheck_active_scan', JSON.stringify({
+        scanId: res.scan_id,
+        url: parsed.data.url,
+        startedAt: Date.now(),
+        userId: user.id
+      }));
+
+      // If the backend returned a cached completed scan, skip progress page
+      if (res.status === 'complete' || res.status === 'failed') {
+        router.push(`/report/${res.scan_id}`);
+      } else {
+        router.push(`/scan/${res.scan_id}`);
+      }
     } catch { setError('Failed to start scan. Please try again.'); }
     finally { setLoading(false); }
   };
@@ -136,12 +174,13 @@ export default function HomePage() {
               </motion.div>
 
               <motion.h1 variants={fadeUp} className="text-4xl md:text-5xl lg:text-display font-bold text-text-primary leading-tight mb-5">
-                Enterprise Security<br />Intelligence.{' '}
-                <span className="text-gradient-blue">₹499.</span>
+                Your Website&apos;s Security Audit.
+                <br />
+                <span className="text-gradient-blue">DPDP-Compliant.</span>{' '}Results in 90 Seconds.
               </motion.h1>
 
               <motion.p variants={fadeUp} className="text-lg text-text-secondary max-w-lg mb-8">
-                29 passive scan modules. DPDP Act compliance mapping. EPSS-enriched CVE intelligence. Plain-English reports with financial risk quantification. One-time payment, no subscription.
+                29 security checks run automatically. Every finding explained in plain English with the exact fix. DPDP Act violations flagged by section number. Starts free — full report from Rs. 299.
               </motion.p>
 
               {/* Scan Input */}
@@ -153,7 +192,7 @@ export default function HomePage() {
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleScan()}
-                      placeholder="Enter your website URL..."
+                      placeholder="Enter your website URL to get your free report"
                       className="w-full pl-11 pr-4 py-3.5 bg-transparent text-sm text-text-primary placeholder:text-text-muted outline-none"
                     />
                   </div>
@@ -162,7 +201,7 @@ export default function HomePage() {
                     disabled={loading}
                     className="px-6 py-3.5 rounded-btn bg-nanz-gradient text-white text-sm font-semibold flex items-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-60 flex-shrink-0"
                   >
-                    {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <>Scan Free <ArrowRight className="w-4 h-4" /></>}
+                    {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <>Get Your Security Report <ArrowRight className="w-4 h-4" /></>}
                   </button>
                 </div>
                 {error && <p className="text-xs text-critical mt-3">{error}</p>}
@@ -172,7 +211,7 @@ export default function HomePage() {
                   {[
                     { icon: Shield, text: '29 scan modules' },
                     { icon: FileText, text: 'DPDP compliance included' },
-                    { icon: Zap, text: 'No subscription' },
+                    { icon: Zap, text: 'Report ready in 90 seconds' },
                   ].map((chip) => (
                     <div key={chip.text} className="flex items-center gap-1.5 text-xs text-text-muted">
                       <chip.icon className="w-3.5 h-3.5 text-nanz-400" />
@@ -275,7 +314,7 @@ export default function HomePage() {
           <div className="text-center mt-10">
             <p className="text-text-secondary mb-4">Want to see YOUR site&apos;s report? It takes 90 seconds.</p>
             <a href="#hero" className="inline-flex items-center gap-2 px-6 py-3 rounded-btn bg-nanz-gradient text-white text-sm font-semibold hover:opacity-90 transition-opacity">
-              Scan My Website Free <ArrowRight className="w-4 h-4" />
+              Get Your Security Report <ArrowRight className="w-4 h-4" />
             </a>
           </div>
         </div>
@@ -363,12 +402,12 @@ export default function HomePage() {
       <section className="py-20 lg:py-28 bg-surface/20 border-t border-surface-border">
         <div className="max-w-3xl mx-auto px-6 text-center">
           <NanzLogo size="xl" className="justify-center mb-8" />
-          <h2 className="text-headline text-text-primary mb-4">29 Checks. Plain English. ₹499.</h2>
+          <h2 className="text-headline text-text-primary mb-4">29 Checks. Plain English. From Rs. 299.</h2>
           <p className="text-text-secondary max-w-lg mx-auto mb-8">
-            Enterprise security intelligence at a price any Indian business can afford. Start with a free scan — no signup required.
+            Your website&apos;s security audit — DPDP-compliant, results in 90 seconds. Start with a free scan.
           </p>
           <a href="#hero" className="inline-flex items-center gap-2 px-8 py-4 rounded-btn bg-nanz-gradient text-white text-sm font-semibold hover:opacity-90 transition-opacity">
-            Scan My Website Free <ArrowRight className="w-4 h-4" />
+            Get Your Security Report <ArrowRight className="w-4 h-4" />
           </a>
         </div>
       </section>
