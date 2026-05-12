@@ -23,7 +23,7 @@ import DisclaimerBanner from '@/components/DisclaimerBanner';
 import ScoreRing from '@/components/ScoreRing';
 import ScoreExplainer from '@/components/ScoreExplainer';
 import RiskCard from '@/components/RiskCard';
-import FixNowModal from '@/components/FixNowModal';
+import { FixPanel } from '@/components/FixPanel';
 import SmartSummaryBar from '@/components/SmartSummaryBar';
 import AlertFatigueGuard from '@/components/AlertFatigueGuard';
 import ScanModuleStatus from '@/components/ScanModuleStatus';
@@ -574,15 +574,14 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
       {/* ── Alert Fatigue Guard ── */}
       <AlertFatigueGuard criticalCount={criticalCount} />
 
-      {/* ── Fix Now Modal ── */}
-      {activeModal && (
-        <FixNowModal
-          finding={activeModal}
-          onClose={() => setActiveModal(null)}
-          onMarkFixed={handleMarkFixed}
-          onFalsePositive={handleFalsePositive}
-        />
-      )}
+      {/* ── Fix Panel (AI-powered) ── */}
+      <FixPanel
+        finding={activeModal}
+        open={!!activeModal}
+        onClose={() => setActiveModal(null)}
+        scanId={params.scanId}
+        targetDomain={report.domain}
+      />
 
       <DisclaimerBanner />
       <Footer />

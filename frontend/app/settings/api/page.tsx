@@ -53,7 +53,7 @@ export default function APIPage() {
         <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2 mb-4"><Code className="w-4 h-4 text-nanz-400" /> Example Request</h3>
         <pre className="bg-background rounded-btn p-4 text-xs text-text-secondary font-mono overflow-x-auto border border-surface-border">{exampleCode}</pre>
         <div className="mt-4 flex items-center gap-4">
-          <a href="#" className="text-xs text-nanz-400 hover:text-nanz-300 transition-colors flex items-center gap-1">Full documentation <ExternalLink className="w-3 h-3" /></a>
+          <a href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/docs`} target="_blank" rel="noopener noreferrer" className="text-xs text-nanz-400 hover:text-nanz-300 transition-colors flex items-center gap-1">Full documentation <ExternalLink className="w-3 h-3" /></a>
           <span className="text-xs text-text-muted">Rate limit: 100 requests/min (Pro), 500/min (Business)</span>
         </div>
       </div>

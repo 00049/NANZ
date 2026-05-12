@@ -101,7 +101,7 @@ async def add_security_headers(request: Request, call_next):
         )
 
 
-from app.routers import health, scans, reports, payments, email, auth, domains, workspaces
+from app.routers import health, scans, reports, payments, email, auth, domains, workspaces, fixes
 from app.routers import ingest  # BYOS scanner ingestion layer
 
 app.include_router(health.router)
@@ -112,4 +112,5 @@ app.include_router(scans.router, prefix="/api/scans")
 app.include_router(reports.router, prefix="/api/reports")
 app.include_router(payments.router, prefix="/api/payments")
 app.include_router(email.router, prefix="/api/tools")
+app.include_router(fixes.router, prefix="/api/v1")
 app.include_router(ingest.router)  # Mounted at /api/ingest
