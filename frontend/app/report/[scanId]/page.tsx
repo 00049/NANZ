@@ -316,7 +316,7 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
     if (canViewFull) {
       fetchData();
     }
-  }, [params.scanId, canViewFull]);
+  }, [params.scanId, canViewFull, router, token]);
 
   const handleFixClick = useCallback((finding: RiskItem) => {
     setActiveModal(finding);

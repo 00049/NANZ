@@ -103,7 +103,7 @@ export default function DPDPExportPage() {
       <div className="mb-8">
         <h2 className="text-lg font-bold text-gray-900 border-b border-gray-200 pb-2 mb-3">Executive Summary</h2>
         <p className="text-sm text-gray-700 leading-relaxed font-medium">
-          {dpdp.summary} This audit evaluates {report.domain}'s adherence to the security safeguards mandated by Section 8(4) of the DPDP Act. The system is currently operating with <strong className="text-red-600">{criticalCount} CRITICAL</strong> and <strong className="text-amber-600">{highCount} HIGH</strong> severity non-compliance issues that must be addressed immediately to mitigate regulatory action by the Data Protection Board.
+          {dpdp.summary} This audit evaluates {report.domain}&apos;s adherence to the security safeguards mandated by Section 8(4) of the DPDP Act. The system is currently operating with <strong className="text-red-600">{criticalCount} CRITICAL</strong> and <strong className="text-amber-600">{highCount} HIGH</strong> severity non-compliance issues that must be addressed immediately to mitigate regulatory action by the Data Protection Board.
         </p>
       </div>
 
