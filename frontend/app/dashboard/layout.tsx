@@ -19,6 +19,7 @@ const navItems = [
   { label: "Assets", href: "/dashboard/assets", icon: Globe },
   { label: "Scan History", href: "/dashboard/history", icon: History },
   { label: "Monitoring", href: "/dashboard/monitoring", icon: Activity },
+  { label: "Compliance", href: "/dashboard/compliance", icon: Shield },
 ];
 
 const bottomItems = [
@@ -74,11 +75,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         collapsed ? "w-[68px]" : "w-[260px]"
       )}>
         {/* Logo */}
-        <div className={cn("flex items-center h-16 px-4 border-b border-sidebar-border", collapsed ? "justify-center" : "justify-between")}>
+        <div 
+          className={cn("flex items-center h-16 px-4 border-b border-sidebar-border", collapsed ? "justify-center cursor-pointer hover:bg-sidebar-hover transition-colors" : "justify-between")}
+          onClick={collapsed ? () => setCollapsed(false) : undefined}
+        >
           <NanzLogo size="sm" showText={!collapsed} />
-          <button onClick={() => setCollapsed(!collapsed)} className="text-text-muted hover:text-text-secondary transition-colors hidden lg:block">
-            {collapsed ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
-          </button>
+          {!collapsed && (
+            <button 
+              onClick={(e) => { e.stopPropagation(); setCollapsed(true); }} 
+              className="text-text-muted hover:text-text-secondary transition-colors hidden lg:block p-1"
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Scan CTA */}

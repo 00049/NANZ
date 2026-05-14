@@ -36,32 +36,39 @@ export function NanzLogo({ size = "md", showText = true, className }: NanzLogoPr
 
   const h = containerH[size] ?? 44;
 
-  // ── Full wordmark mode ─────────────────────────────────────────────────────
-  // The logo content occupies ~68% of the image height and ~88% of the width.
-  // Scale the image up so content fills the container height, then clip padding.
+  // The logo content occupies exactly 50.6% of the image height.
+  // Scale the image up so the content exactly fills the container height `h`.
+  const scale = 1 / 0.506;
+  const imgH = h * scale;
+  const imgW = imgH * 2; // Image is 1774x887 (2:1)
+  
+  // Trimming offsets based on exact bounding box
+  const topOffset = Math.round(-imgH * 0.291);
+  const leftOffset = Math.round(-imgW * 0.0705);
+
   if (showText) {
-    const scale = 1 / 0.68;
-    const imgH = Math.round(h * scale);
-    const imgW = imgH * 2; // image is 1774×887 ≈ 2:1
-    const containerW = Math.round(imgW * 0.82); // clip right padding too
+    // Content width is 0.8545
+    const containerW = Math.round(imgW * 0.8545);
 
     return (
       <div
-        className={cn("flex-shrink-0", className)}
+        className={cn("flex-shrink-0 flex items-center justify-center", className)}
         style={{ width: containerW, height: h, overflow: "hidden", position: "relative" }}
       >
         <Image
           src="/naanz-logo.png"
           alt="NAANZ"
-          width={imgW}
-          height={imgH}
+          width={Math.round(imgW)}
+          height={Math.round(imgH)}
           priority
           style={{
-            width: imgW,
-            height: imgH,
+            width: Math.round(imgW),
+            height: Math.round(imgH),
+            maxWidth: "none",
             position: "absolute",
-            top: Math.round(-imgH * 0.13),  // trim top black padding
-            left: Math.round(-imgW * 0.05), // trim left black padding
+            top: topOffset,
+            left: leftOffset,
+            mixBlendMode: "screen",
           }}
           className="select-none pointer-events-none"
         />
@@ -69,30 +76,29 @@ export function NanzLogo({ size = "md", showText = true, className }: NanzLogoPr
     );
   }
 
-  // ── Icon-only mode (collapsed sidebar) ────────────────────────────────────
-  // The N icon mark occupies the left ~28% of the image width.
-  // Show a square container that crops to just the icon.
-  const iconSize = h;
-  const imgH = Math.round(h / 0.68);
-  const imgW = imgH * 2;
+  // Icon-only mode (collapsed sidebar)
+  // Reduced from 0.244 to 0.235 to eliminate the small line bleed from the next letter
+  const iconW = Math.round(imgW * 0.235);
 
   return (
     <div
-      className={cn("flex-shrink-0", className)}
-      style={{ width: iconSize, height: iconSize, overflow: "hidden", position: "relative" }}
+      className={cn("flex-shrink-0 flex items-center justify-center", className)}
+      style={{ width: iconW, height: h, overflow: "hidden", position: "relative" }}
     >
       <Image
         src="/naanz-logo.png"
         alt="NAANZ"
-        width={imgW}
-        height={imgH}
+        width={Math.round(imgW)}
+        height={Math.round(imgH)}
         priority
         style={{
-          width: imgW,
-          height: imgH,
+          width: Math.round(imgW),
+          height: Math.round(imgH),
+          maxWidth: "none",
           position: "absolute",
-          top: Math.round(-imgH * 0.13),
-          left: Math.round(-imgW * 0.05),
+          top: topOffset,
+          left: leftOffset,
+          mixBlendMode: "screen",
         }}
         className="select-none pointer-events-none"
       />

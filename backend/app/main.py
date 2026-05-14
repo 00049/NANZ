@@ -67,11 +67,13 @@ origins = [
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3001",
     "http://127.0.0.1:3002",
+    "http://127.0.0.1:3002",
     "http://127.0.0.1:3003",
     "https://shieldcheck.in",
     "https://www.shieldcheck.in",
     "https://nanz.in",
     "https://www.nanz.in",
+    settings.FRONTEND_URL,
 ]
 
 app.add_middleware(

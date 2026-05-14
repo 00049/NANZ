@@ -1,10 +1,10 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Globe, Plus, Search, MoreHorizontal, Play, History, Settings, Trash2, CheckCircle2, Clock, AlertCircle, Loader2 } from "lucide-react";
+import { Globe, Plus, Search, MoreHorizontal, Play, History, Settings, Trash2, CheckCircle2, Clock, AlertCircle, Loader2, X } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useState, useEffect } from "react";
-import { getDomains } from "@/lib/api";
+import { getDomains, createDomain } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
 
 const statusConfig = {
@@ -18,6 +18,10 @@ export default function AssetsPage() {
   const token = useAuthStore((state) => state.token);
   const [domains, setDomains] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newDomain, setNewDomain] = useState("");
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -27,6 +31,23 @@ export default function AssetsPage() {
         .finally(() => setLoading(false));
     }
   }, [token]);
+
+  const handleAddDomain = async () => {
+    if (!newDomain.trim() || !token) return;
+    setAdding(true);
+    try {
+      await createDomain(token, newDomain.trim());
+      const data = await getDomains(token);
+      setDomains(Array.isArray(data) ? data : []);
+      setShowAddModal(false);
+      setNewDomain("");
+    } catch (err) {
+      console.error("Failed to add domain", err);
+      alert("Failed to add domain. Please try again.");
+    } finally {
+      setAdding(false);
+    }
+  };
 
   const filtered = domains.filter(d => (d.domain_name || "").toLowerCase().includes(search.toLowerCase()));
 
@@ -41,7 +62,10 @@ export default function AssetsPage() {
           <h1 className="text-title text-text-primary">Assets</h1>
           <p className="text-sm text-text-secondary mt-1">{domains.length} domains in your workspace</p>
         </div>
-        <button className="px-4 py-2.5 rounded-btn bg-nanz-gradient text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-2">
+        <button 
+          onClick={() => setShowAddModal(true)}
+          className="px-4 py-2.5 rounded-btn bg-nanz-gradient text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-2"
+        >
           <Plus className="w-4 h-4" /> Add Domain
         </button>
       </div>
@@ -89,6 +113,61 @@ export default function AssetsPage() {
           );
         })}
       </div>
+
+      {/* Add Domain Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="bg-card border border-card-border rounded-xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-surface-border">
+              <h2 className="text-lg font-semibold text-text-primary">Add New Domain</h2>
+              <button 
+                onClick={() => setShowAddModal(false)}
+                className="text-text-muted hover:text-text-primary transition-colors p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-text-secondary">Domain Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g., example.com"
+                  value={newDomain}
+                  onChange={(e) => setNewDomain(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-btn bg-surface border border-surface-border text-sm text-text-primary placeholder:text-text-muted focus:border-nanz-500 focus:ring-1 focus:ring-nanz-500/30 outline-none transition-all"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddDomain();
+                  }}
+                />
+              </div>
+              <p className="text-xs text-text-muted leading-relaxed">
+                Enter the root domain you want to monitor. We will automatically verify ownership and begin asset discovery.
+              </p>
+            </div>
+
+            <div className="p-5 border-t border-surface-border bg-surface/50 flex justify-end gap-3">
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="px-4 py-2.5 text-sm font-medium text-text-secondary hover:text-text-primary transition-colors"
+                disabled={adding}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddDomain}
+                disabled={!newDomain.trim() || adding}
+                className="px-5 py-2.5 rounded-btn bg-nanz-gradient text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {adding && <Loader2 className="w-4 h-4 animate-spin" />}
+                {adding ? 'Adding...' : 'Add Domain'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

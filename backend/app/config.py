@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     DATABASE_URL: str = "postgresql+asyncpg://postgres:localdev@localhost:5432/shieldcheck"
     REDIS_URL: str = "redis://localhost:6379"
+    FRONTEND_URL: str = "http://localhost:3000"
 
     JWT_SECRET: str = "change_this_to_64_char_random_hex"
     APP_SECRET_KEY: str = "change_this_to_64_char_random_hex"

@@ -1,6 +1,6 @@
 """
 Rule-based fix generator — produces structured remediation guides
-from finding metadata when the Anthropic API is unavailable.
+from finding metadata when the Anthropic/OpenAI API is unavailable.
 """
 
 import re
@@ -8,6 +8,7 @@ from app.schemas.fix import FixRequest
 
 # Category-specific remediation knowledge base
 FIX_KNOWLEDGE: dict[str, dict] = {
+    # ── Legacy Categories ──
     "ssl": {
         "summary": "Your SSL/TLS configuration has security weaknesses that could allow attackers to intercept or downgrade encrypted communications.",
         "impact": "An attacker on the same network can perform man-in-the-middle attacks, intercept credentials, session tokens, and sensitive data transmitted between users and your server.",
@@ -37,96 +38,87 @@ FIX_KNOWLEDGE: dict[str, dict] = {
         "difficulty": "easy",
         "references": ["https://owasp.org/www-project-secure-headers/", "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers"],
     },
-    "dns": {
-        "summary": "Your DNS configuration is missing security records that protect your domain from email spoofing and unauthorized certificate issuance.",
-        "impact": "Attackers can send phishing emails that appear to come from your domain, and unauthorized SSL certificates can be issued for your domain without your knowledge.",
+
+    # ── Enterprise Intelligence Base ──
+    "sqli": {
+        "summary": "SQL Injection (SQLi) occurs when an application inadvertently concatenates untrusted input directly into an executable SQL statement, allowing attackers to alter the syntactic structure of the query.",
+        "impact": "Complete compromise of confidentiality, integrity, and availability. Attackers can extract sensitive database tables, modify financial records, or exploit administrative procedures (e.g., xp_cmdshell) to execute arbitrary commands on the underlying host OS.",
         "steps": [
-            {"order": 1, "title": "Add SPF record", "description": "Create an SPF TXT record to specify which mail servers are authorized to send email for your domain.", "code_snippet": "# DNS TXT Record\nv=spf1 include:_spf.google.com ~all", "code_language": "bash"},
-            {"order": 2, "title": "Add DMARC record", "description": "Create a DMARC TXT record to instruct receiving mail servers how to handle unauthorized emails.", "code_snippet": "# DNS TXT Record for _dmarc.yourdomain.com\nv=DMARC1; p=reject; rua=mailto:dmarc-reports@yourdomain.com; pct=100", "code_language": "bash"},
-            {"order": 3, "title": "Add CAA record", "description": "Restrict which Certificate Authorities can issue SSL certificates for your domain.", "code_snippet": "# DNS CAA Records\n0 issue \"letsencrypt.org\"\n0 issuewild \";\"\n0 iodef \"mailto:security@yourdomain.com\"", "code_language": "bash"},
-            {"order": 4, "title": "Verify DNS records", "description": "Use dig or an online tool to verify your new DNS records are propagated.", "code_snippet": "dig TXT yourdomain.com +short\ndig TXT _dmarc.yourdomain.com +short\ndig CAA yourdomain.com +short", "code_language": "bash"},
+            {"order": 1, "title": "Eradicate Raw String Concatenation", "description": "Immediately refactor any codebase using string interpolation (e.g., Python f-strings) or direct concatenation for database queries.", "code_snippet": None, "code_language": None},
+            {"order": 2, "title": "Implement Parameterized Queries", "description": "Ensure the database driver treats user input strictly as literal values by utilizing parameterized queries (e.g., $1 variables in Postgres) or native ORM features.", "code_snippet": "/* Node.js (pg) Example */\nconst query = \"SELECT * FROM accounts WHERE id = $1\";\nconst result = await client.query(query, [userId]);", "code_language": "javascript"},
+            {"order": 3, "title": "Deploy WAF Protection", "description": "Deploy Web Application Firewall rules utilizing complex regular expressions (e.g., `(?i)(\\b(UNION|SELECT|INSERT|UPDATE|DELETE|DROP)\\b)`) to intercept malicious payloads at the edge.", "code_snippet": None, "code_language": None},
         ],
-        "verification": "Query your DNS records to confirm SPF, DMARC, and CAA are correctly configured.",
-        "verification_command": "dig TXT _dmarc.yourdomain.com +short",
-        "estimated_minutes": 20,
-        "difficulty": "easy",
-        "references": ["https://dmarc.org/overview/", "https://letsencrypt.org/docs/caa/"],
-    },
-    "ports": {
-        "summary": "Your server has unnecessary network ports exposed to the public internet, increasing your attack surface significantly.",
-        "impact": "Exposed database or admin ports allow attackers to directly connect to internal services, attempt brute-force attacks, or exploit known vulnerabilities in those services.",
-        "steps": [
-            {"order": 1, "title": "Identify all open ports", "description": "Scan your server to identify which ports are currently exposed.", "code_snippet": "nmap -sV -p 1-65535 yourdomain.com", "code_language": "bash"},
-            {"order": 2, "title": "Configure firewall rules", "description": "Block all unnecessary ports using your cloud provider's security groups or a host-based firewall. Only allow ports 80, 443, and SSH (22) from trusted IPs.", "code_snippet": "# UFW (Ubuntu)\nsudo ufw default deny incoming\nsudo ufw allow 80/tcp\nsudo ufw allow 443/tcp\nsudo ufw allow from YOUR_IP to any port 22\nsudo ufw enable", "code_language": "bash"},
-            {"order": 3, "title": "Move databases behind VPN", "description": "Ensure database ports (3306, 5432, 27017, 6379) are only accessible from your application servers, never from the public internet.", "code_snippet": "# AWS Security Group — remove 0.0.0.0/0 from DB ports\naws ec2 revoke-security-group-ingress \\\n  --group-id sg-xxxx \\\n  --protocol tcp --port 5432 \\\n  --cidr 0.0.0.0/0", "code_language": "bash"},
-            {"order": 4, "title": "Verify ports are closed", "description": "Re-scan to confirm only required ports remain open.", "code_snippet": "nmap -p 3306,5432,27017,6379 yourdomain.com", "code_language": "bash"},
-        ],
-        "verification": "Run a port scan to confirm database and admin ports are no longer accessible from the public internet.",
-        "verification_command": "nmap -p 3306,5432,27017,6379,8080 yourdomain.com",
+        "verification": "Utilize safe, boolean inferential payloads (e.g., `?id=1' AND 1=1--` vs `?id=1' AND 1=2--`) to confirm the database no longer evaluates the injected logical operators.",
+        "verification_command": "curl -s \"https://yourdomain.com/api/data?id=1' AND 1=1--\"",
         "estimated_minutes": 30,
         "difficulty": "medium",
-        "references": ["https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/04-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information"],
+        "references": ["https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html"],
     },
-    "cookies": {
-        "summary": "Your application's cookies are missing security flags, making them vulnerable to theft via XSS attacks or interception over unencrypted connections.",
-        "impact": "An attacker can steal session cookies through cross-site scripting or network interception, gaining unauthorized access to user accounts.",
+    "xss": {
+        "summary": "Cross-Site Scripting (XSS) manifests when a web application processes untrusted user input and reflects or stores it within an HTML response without applying rigorous, context-aware output encoding.",
+        "impact": "Attackers can inject malicious executable JavaScript into the victim's browser context, enabling session hijacking, unauthorized data exfiltration, account impersonation, and client-side malware deployment.",
         "steps": [
-            {"order": 1, "title": "Set HttpOnly flag", "description": "Add the HttpOnly flag to all session and authentication cookies to prevent JavaScript access.", "code_snippet": "Set-Cookie: session=abc123; HttpOnly; Secure; SameSite=Strict; Path=/", "code_language": "bash"},
-            {"order": 2, "title": "Set Secure flag", "description": "Add the Secure flag to ensure cookies are only sent over HTTPS connections.", "code_snippet": "# Express.js example\nres.cookie('session', token, {\n  httpOnly: true,\n  secure: true,\n  sameSite: 'strict',\n  maxAge: 3600000\n});", "code_language": "javascript"},
-            {"order": 3, "title": "Set SameSite attribute", "description": "Add SameSite=Strict or SameSite=Lax to prevent CSRF attacks.", "code_snippet": None, "code_language": None},
-            {"order": 4, "title": "Verify cookie flags", "description": "Check cookies in browser DevTools or via curl.", "code_snippet": "curl -sI https://yourdomain.com/login | grep -i set-cookie", "code_language": "bash"},
+            {"order": 1, "title": "Enforce Context-Aware Output Encoding", "description": "Eliminate framework escape hatches (e.g., React's `dangerouslySetInnerHTML`, Laravel's `{!! !!}`, Django's `|safe` filter). Force all variables through default auto-escaping rendering engines.", "code_snippet": "<!-- Django Secure Example -->\n<div class=\"bio\">{{ user.biography }}</div>", "code_language": "html"},
+            {"order": 2, "title": "Sanitize Required Rich Text", "description": "If users must submit HTML (e.g., WYSIWYG editors), meticulously strip dangerous tags and event handlers (onerror, onload) using an industry-standard library like DOMPurify prior to database storage.", "code_snippet": "const cleanHTML = DOMPurify.sanitize(dirtyInput);", "code_language": "javascript"},
+            {"order": 3, "title": "Deploy Content Security Policy (CSP)", "description": "Implement strict CSP headers to explicitly block the execution of unauthorized inline scripts.", "code_snippet": "Content-Security-Policy: default-src 'self'; script-src 'self'", "code_language": "http"},
+            {"order": 4, "title": "Set HttpOnly Cookie Flags", "description": "Prevent JavaScript access to session tokens to mitigate the operational impact of a successful XSS payload.", "code_snippet": "Set-Cookie: session=xyz; HttpOnly; Secure; SameSite=Strict", "code_language": "http"},
         ],
-        "verification": "Check the Set-Cookie headers in your application responses to confirm all security flags are present.",
-        "verification_command": "curl -sI https://yourdomain.com | grep -i set-cookie",
-        "estimated_minutes": 10,
-        "difficulty": "easy",
-        "references": ["https://owasp.org/www-community/controls/SecureCookieAttribute", "https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies"],
-    },
-    "cors": {
-        "summary": "Your CORS configuration allows requests from any origin, which can be exploited to make authenticated cross-origin requests on behalf of your users.",
-        "impact": "An attacker can create a malicious website that makes API requests to your server using your users' credentials, stealing sensitive data or performing unauthorized actions.",
-        "steps": [
-            {"order": 1, "title": "Replace wildcard with allowlist", "description": "Replace Access-Control-Allow-Origin: * with an explicit list of trusted origins.", "code_snippet": "# Nginx\nmap $http_origin $cors_origin {\n    default '';\n    'https://yourdomain.com' $http_origin;\n    'https://app.yourdomain.com' $http_origin;\n}\nadd_header Access-Control-Allow-Origin $cors_origin always;", "code_language": "nginx"},
-            {"order": 2, "title": "Restrict allowed methods and headers", "description": "Only allow the HTTP methods and headers your API actually needs.", "code_snippet": "add_header Access-Control-Allow-Methods 'GET, POST, PUT, DELETE' always;\nadd_header Access-Control-Allow-Headers 'Authorization, Content-Type' always;", "code_language": "nginx"},
-            {"order": 3, "title": "Never use credentials with wildcard", "description": "If you need Access-Control-Allow-Credentials: true, you must specify exact origins, never use wildcard.", "code_snippet": None, "code_language": None},
-            {"order": 4, "title": "Test CORS configuration", "description": "Verify that unauthorized origins are rejected.", "code_snippet": "curl -H 'Origin: https://evil.com' -sI https://yourdomain.com/api | grep -i access-control", "code_language": "bash"},
-        ],
-        "verification": "Make a request with an unauthorized Origin header and confirm it is rejected.",
-        "verification_command": "curl -H 'Origin: https://evil.com' -sI https://api.yourdomain.com | grep -i access-control",
-        "estimated_minutes": 15,
-        "difficulty": "easy",
-        "references": ["https://owasp.org/www-community/attacks/CORS_OriginHeaderScrutiny", "https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS"],
-    },
-    "cloud_storage": {
-        "summary": "A cloud storage bucket associated with your domain is publicly accessible, potentially exposing sensitive files, backups, or configuration data.",
-        "impact": "Attackers can download sensitive data including database backups, user data, credentials, and internal documents from the exposed bucket.",
-        "steps": [
-            {"order": 1, "title": "Identify the exposed bucket", "description": "Determine which cloud storage buckets are publicly accessible and what data they contain.", "code_snippet": "# AWS S3\naws s3 ls s3://your-bucket-name --no-sign-request", "code_language": "bash"},
-            {"order": 2, "title": "Remove public access", "description": "Block all public access to the bucket immediately.", "code_snippet": "# AWS S3 — block public access\naws s3api put-public-access-block \\\n  --bucket your-bucket-name \\\n  --public-access-block-configuration \\\n  BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true", "code_language": "bash"},
-            {"order": 3, "title": "Audit bucket contents", "description": "Review all files in the bucket. If sensitive data was exposed, treat this as a data breach.", "code_snippet": None, "code_language": None},
-            {"order": 4, "title": "Enable bucket logging", "description": "Turn on access logging to detect any unauthorized access that may have occurred.", "code_snippet": None, "code_language": None},
-        ],
-        "verification": "Attempt to access the bucket without authentication to confirm public access is blocked.",
-        "verification_command": "aws s3 ls s3://your-bucket-name --no-sign-request 2>&1 | head -3",
-        "estimated_minutes": 15,
-        "difficulty": "easy",
-        "references": ["https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/11-Test_Cloud_Storage"],
-    },
-    "cms": {
-        "summary": "Your content management system has security vulnerabilities that could allow attackers to compromise your website.",
-        "impact": "Attackers can exploit CMS vulnerabilities to inject malicious code, deface your website, steal user data, or use your server for further attacks.",
-        "steps": [
-            {"order": 1, "title": "Update CMS to latest version", "description": "Apply all available security patches and update to the latest stable version of your CMS.", "code_snippet": "# WordPress\nwp core update\nwp plugin update --all\nwp theme update --all", "code_language": "bash"},
-            {"order": 2, "title": "Remove unused plugins and themes", "description": "Deactivate and delete any plugins or themes that are not actively used — they are attack vectors even when inactive.", "code_snippet": None, "code_language": None},
-            {"order": 3, "title": "Harden admin access", "description": "Change the default admin URL, enforce strong passwords, and enable two-factor authentication.", "code_snippet": None, "code_language": None},
-            {"order": 4, "title": "Verify updates are applied", "description": "Check your CMS version and scan for remaining vulnerabilities.", "code_snippet": "wp core version\nwp plugin list --fields=name,version,update_version", "code_language": "bash"},
-        ],
-        "verification": "Confirm your CMS is running the latest version with all plugins updated.",
+        "verification": "Submit benign HTML tags (e.g., `<h1>test</h1>` or `<script>alert(1)</script>`) into input fields and verify the response safely renders the literal text via HTML entities (&lt;h1&gt;) instead of executing it.",
         "verification_command": None,
-        "estimated_minutes": 30,
+        "estimated_minutes": 25,
         "difficulty": "medium",
-        "references": ["https://owasp.org/www-project-web-security-testing-guide/"],
+        "references": ["https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"],
     },
+    "csrf": {
+        "summary": "Cross-Site Request Forgery (CSRF) capitalizes on the browser's default behavior of automatically appending ambient session cookies to cross-origin requests, coercing an authenticated victim into executing unauthorized state-changing actions.",
+        "impact": "Attackers can silently alter user account details, modify administrative configurations, or initiate unauthorized financial transactions using the victim's authenticated session.",
+        "steps": [
+            {"order": 1, "title": "Configure SameSite Cookie Attributes", "description": "Instruct the client browser to never transmit session cookies during cross-site requests by setting the SameSite attribute.", "code_snippet": "Set-Cookie: session=abc; Secure; HttpOnly; SameSite=Lax", "code_language": "http"},
+            {"order": 2, "title": "Implement Anti-CSRF Tokens", "description": "Require an unpredictable, server-generated validation token for all state-changing endpoints (POST, PUT, DELETE). Ensure middleware (e.g., csurf in Node, CsrfViewMiddleware in Django) is universally applied.", "code_snippet": "<!-- Laravel Example -->\n<form method=\"POST\" action=\"/update\">\n    @csrf\n    <button type=\"submit\">Save</button>\n</form>", "code_language": "html"},
+            {"order": 3, "title": "Enforce Custom Headers for SPAs", "description": "For API-driven Single Page Applications relying on CORS, mandate a custom HTTP header (e.g., `X-Requested-With: XMLHttpRequest`) which standard browsers block on cross-origin requests without explicit permission.", "code_snippet": None, "code_language": None},
+        ],
+        "verification": "Using an intercepting proxy (like Burp Suite), capture a state-changing POST request, strip the Anti-CSRF token parameter, and submit it. Ensure the server forcefully rejects it with a 403 Forbidden.",
+        "verification_command": None,
+        "estimated_minutes": 20,
+        "difficulty": "medium",
+        "references": ["https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html"],
+    },
+    "idor": {
+        "summary": "Insecure Direct Object Reference (IDOR) / Broken Access Control occurs when an application exposes internal object identifiers (like sequential integers) to the client but fails to enforce rigorous authorization checks upon receiving them.",
+        "impact": "Enables horizontal privilege escalation (accessing peer user data) and vertical privilege escalation (manipulating administrative records), leading to massive data exposure and compliance violations.",
+        "steps": [
+            {"order": 1, "title": "Implement Indirect Object References", "description": "Replace predictable, sequential auto-incrementing integers in client-facing APIs with cryptographically secure, unguessable identifiers (e.g., UUIDv4).", "code_snippet": None, "code_language": None},
+            {"order": 2, "title": "Enforce Object-Level Authorization", "description": "Ensure every data retrieval and manipulation function validates the requester's authenticated session against the target object's ownership metadata.", "code_snippet": "/* Express.js Secure Example */\nif (req.user.id !== requestedObject.ownerId && req.user.role !== 'ADMIN') {\n    return res.status(403).json({ error: \"Unauthorized\" });\n}", "code_language": "javascript"},
+            {"order": 3, "title": "Utilize Framework Access Controls", "description": "Leverage centralized authorization frameworks such as Spring Security @PreAuthorize annotations, Laravel Policies, or Django object-level permissions to ensure rules are consistently applied.", "code_snippet": "/* Spring Boot Secure Example */\n@PreAuthorize(\"@securityService.isOwner(authentication, #id)\")\npublic Order getOrder(@PathVariable Long id) { ... }", "code_language": "java"},
+        ],
+        "verification": "Authenticate as User A, intercept an API request, capture an object identifier (e.g., ?invoice_id=100), then authenticate as User B and attempt to access that exact identifier. Verify the server returns a 403 Forbidden.",
+        "verification_command": None,
+        "estimated_minutes": 45,
+        "difficulty": "hard",
+        "references": ["https://cheatsheetseries.owasp.org/cheatsheets/Insecure_Direct_Object_Reference_Prevention_Cheat_Sheet.html"],
+    },
+    "path_traversal": {
+        "summary": "Path Traversal (Directory Traversal) occurs when an application accepts user-supplied input to construct a file path and passes it to OS filesystem APIs without adequate normalization or boundary validation.",
+        "impact": "Catastrophic exposure of highly sensitive system assets including password hashes (/etc/passwd), source code, private SSH keys, and configuration files containing database credentials (.env files).",
+        "steps": [
+            {"order": 1, "title": "Implement Indirect File Mapping", "description": "Never reference local filesystem paths directly via user input. Store a cryptographic hash or UUID in the database that acts as a secure, non-traversable proxy linking to the actual file path.", "code_snippet": None, "code_language": None},
+            {"order": 2, "title": "Strip Traversal Sequences", "description": "If dynamic file handling is strictly unavoidable, utilize language-specific functions to aggressively discard directory traversal characters (e.g., ../ or ..\\).", "code_snippet": "/* PHP Secure Example */\n$filename = basename($_GET['file']);", "code_language": "php"},
+            {"order": 3, "title": "Enforce Canonicalization and Boundary Checks", "description": "Resolve the user input into a canonical absolute path (resolving symbolic links and relative sequences), then strictly verify the resulting path begins explicitly with the designated upload/storage root directory.", "code_snippet": "/* Node.js Secure Example */\nconst resolvedPath = path.resolve(rootDir, filename);\nif (!resolvedPath.startsWith(rootDir + path.sep)) {\n    throw new Error('Path traversal attempt');\n}", "code_language": "javascript"},
+        ],
+        "verification": "Attempt to access file endpoints using deep traversal sequences (e.g., ?file=../../../../../../etc/passwd) and double-URL encoded variants (%252e%252e%252f). Confirm the application securely rejects the payload.",
+        "verification_command": "curl -s \"https://yourdomain.com/download?file=../../../../../../etc/passwd\"",
+        "estimated_minutes": 35,
+        "difficulty": "medium",
+        "references": ["https://portswigger.net/web-security/file-path-traversal"],
+    },
+}
+
+# Aliases for category mapping
+CATEGORY_ALIASES = {
+    "sql_injection": "sqli",
+    "broken_access_control": "idor",
+    "directory_traversal": "path_traversal",
+    "webapp": "xss", # generic mapping for webapp vulnerabilities if specific type isn't known
 }
 
 # Default fallback for unknown categories
@@ -153,7 +145,21 @@ TIME_MAP = {"critical": 30, "high": 20, "medium": 15, "low": 10}
 def generate_rule_based_fix(req: FixRequest) -> dict:
     """Generate a structured fix response from the rule-based knowledge base."""
     cat = req.category.lower().strip()
-    base = FIX_KNOWLEDGE.get(cat, DEFAULT_FIX).copy()
+    
+    # Resolve aliases
+    cat = CATEGORY_ALIASES.get(cat, cat)
+    
+    # Fallback to fuzzy match if exact match fails
+    matched_cat = None
+    if cat in FIX_KNOWLEDGE:
+        matched_cat = cat
+    else:
+        for known_cat in FIX_KNOWLEDGE.keys():
+            if known_cat in cat or cat in known_cat:
+                matched_cat = known_cat
+                break
+                
+    base = FIX_KNOWLEDGE.get(matched_cat, DEFAULT_FIX).copy() if matched_cat else DEFAULT_FIX.copy()
 
     # Enrich summary with finding-specific context
     title = req.finding_title

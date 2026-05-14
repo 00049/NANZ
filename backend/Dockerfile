@@ -47,4 +47,4 @@ ENV PYTHONPATH=/app
 ENV NUCLEI_TEMPLATES_PATH=/root/nuclei-templates
 
 # Command to run (usually overridden by docker-compose or run script for migrations + uvicorn)
-CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+CMD ["./start.sh"]
