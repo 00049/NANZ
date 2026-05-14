@@ -24,6 +24,7 @@ export default function RegisterPage() {
 
       const res = await registerUser({ name, email, password, company: "NANZ User" });
       useAuthStore.getState().setToken(res.token.access_token);
+      useAuthStore.getState().setUser(res.user);
       window.location.href = "/onboarding";
     } catch (err: any) {
       setError(err.message || "Failed to create account. Email may already be in use.");

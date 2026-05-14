@@ -127,7 +127,10 @@ export async function registerUser(data: any) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error('Registration failed');
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Registration failed');
+  }
   return res.json();
 }
 
@@ -142,7 +145,10 @@ export async function loginUser(data: any) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: formData.toString(),
   });
-  if (!res.ok) throw new Error('Login failed');
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Login failed');
+  }
   return res.json();
 }
 

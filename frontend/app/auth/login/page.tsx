@@ -23,6 +23,7 @@ export default function LoginPage() {
 
       const res = await loginUser({ email, password });
       useAuthStore.getState().setToken(res.token.access_token);
+      useAuthStore.getState().setUser(res.user);
       window.location.href = "/dashboard";
     } catch (err: any) {
       setError(err.message || "Failed to sign in. Please check your credentials.");
