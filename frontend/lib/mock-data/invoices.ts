@@ -47,10 +47,10 @@ export const currentSubscription = {
 };
 
 export const auditLogs = [
-  { id: "log_01", action: "user.login", user: "Sarav Pruthi", detail: "Logged in from Chrome on macOS", ip: "103.45.xx.xx", createdAt: "2026-04-28T10:30:00Z" },
-  { id: "log_02", action: "domain.add", user: "Sarav Pruthi", detail: "Added domain newproject.dev", ip: "103.45.xx.xx", createdAt: "2026-04-25T10:00:00Z" },
+  { id: "log_01", action: "user.login", user: "Admin User", detail: "Logged in from Chrome on macOS", ip: "103.45.xx.xx", createdAt: "2026-04-28T10:30:00Z" },
+  { id: "log_02", action: "domain.add", user: "Admin User", detail: "Added domain newproject.dev", ip: "103.45.xx.xx", createdAt: "2026-04-25T10:00:00Z" },
   { id: "log_03", action: "report.share", user: "Priya Sharma", detail: "Shared clientapp.com report (public link)", ip: "182.73.xx.xx", createdAt: "2026-04-24T15:20:00Z" },
   { id: "log_04", action: "billing.upgrade", user: "Ravi Kumar", detail: "Upgraded plan from Free to Pro", ip: "103.45.xx.xx", createdAt: "2026-04-20T09:45:00Z" },
-  { id: "log_05", action: "team.invite", user: "Sarav Pruthi", detail: "Invited neha@client.com as Viewer", ip: "103.45.xx.xx", createdAt: "2026-04-18T11:00:00Z" },
+  { id: "log_05", action: "team.invite", user: "Admin User", detail: "Invited neha@client.com as Viewer", ip: "103.45.xx.xx", createdAt: "2026-04-18T11:00:00Z" },
   { id: "log_06", action: "monitoring.update", user: "Arjun Mehta", detail: "Changed clientapp.com monitoring to Daily", ip: "49.36.xx.xx", createdAt: "2026-04-15T14:30:00Z" },
 ];

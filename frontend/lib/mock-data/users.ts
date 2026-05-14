@@ -10,8 +10,8 @@ export interface MockUser {
 
 export const currentUser: MockUser = {
   id: "usr_01",
-  name: "Sarav Pruthi",
-  email: "sarav@nanz.ai",
+  name: "Admin User",
+  email: "admin@nanz.ai",
   avatar: "",
   role: "owner",
   company: "NANZ Security",
