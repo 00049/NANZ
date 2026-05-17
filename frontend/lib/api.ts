@@ -129,7 +129,13 @@ export async function registerUser(data: any) {
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Registration failed');
+    let errorMessage = 'Registration failed';
+    if (Array.isArray(errorData.detail)) {
+      errorMessage = errorData.detail[0].msg;
+    } else if (typeof errorData.detail === 'string') {
+      errorMessage = errorData.detail;
+    }
+    throw new Error(errorMessage);
   }
   return res.json();
 }
@@ -147,7 +153,13 @@ export async function loginUser(data: any) {
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Login failed');
+    let errorMessage = 'Login failed';
+    if (Array.isArray(errorData.detail)) {
+      errorMessage = errorData.detail[0].msg;
+    } else if (typeof errorData.detail === 'string') {
+      errorMessage = errorData.detail;
+    }
+    throw new Error(errorMessage);
   }
   return res.json();
 }
