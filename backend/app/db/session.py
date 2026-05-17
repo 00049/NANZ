@@ -8,7 +8,12 @@ import app.models  # noqa: F401
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,  # Set to True for SQL query logging in development
-    future=True
+    future=True,
+    pool_pre_ping=True,
+    connect_args={
+        "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
+    }
 )
 
 # Create an async session maker instance
