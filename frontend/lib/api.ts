@@ -2,6 +2,28 @@ import { ScanResponse, ScanProgress, PreviewResponse, FullReport, RemediationRoa
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+// Helper: read auth token from persisted Zustand store (works outside React components)
+function getStoredToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('nanz-auth-storage');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.state?.token || null;
+  } catch {
+    return null;
+  }
+}
+
+function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  const token = getStoredToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra,
+  };
+}
+
 export async function startScan(url: string, options?: any): Promise<ScanResponse> {
   const res = await fetch(`${API_BASE}/api/scans`, {
     method: 'POST',
@@ -44,8 +66,11 @@ export async function verifyPayment(data: any) {
   return res.json();
 }
 
-export async function getFullReport(scanId: string, token: string): Promise<FullReport> {
-  const res = await fetch(`${API_BASE}/api/reports/${scanId}`);
+export async function getFullReport(scanId: string, token?: string): Promise<FullReport> {
+  const t = token || getStoredToken();
+  const res = await fetch(`${API_BASE}/api/reports/${scanId}`, {
+    headers: t ? { Authorization: `Bearer ${t}` } : {},
+  });
   if (!res.ok) throw new Error('Failed to fetch full report');
   return res.json();
 }
@@ -115,7 +140,10 @@ export async function ingestFindings(
 }
 
 export async function listScans(limit: number = 50, offset: number = 0): Promise<{ total: number; scans: any[] }> {
-  const res = await fetch(`${API_BASE}/api/scans?limit=${limit}&offset=${offset}`);
+  const token = getStoredToken();
+  const res = await fetch(`${API_BASE}/api/scans?limit=${limit}&offset=${offset}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (!res.ok) throw new Error('Failed to fetch scans');
   return res.json();
 }
