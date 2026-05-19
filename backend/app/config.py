@@ -58,3 +58,8 @@ settings = Settings()
 # Automatically fix Supabase pooler URLs to use the asyncpg driver
 if settings.DATABASE_URL and settings.DATABASE_URL.startswith("postgresql://"):
     settings.DATABASE_URL = settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+# Inject statement_cache_size=0 for PgBouncer compatibility (applies to all connections)
+if settings.DATABASE_URL and "statement_cache_size" not in settings.DATABASE_URL:
+    separator = "&" if "?" in settings.DATABASE_URL else "?"
+    settings.DATABASE_URL += f"{separator}statement_cache_size=0"
