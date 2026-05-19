@@ -9,6 +9,8 @@ from app.utils.url_validator import validate_scan_url
 from app.config import settings
 from app.main import limiter
 from app.services.scan_service import create_new_scan, get_scan_status_data, get_scan_preview_data
+from app.core.security import get_current_user
+from app.models.user import User
 
 router = APIRouter(tags=["Scans"])
 
@@ -19,17 +21,24 @@ redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_
 async def list_scans(
     limit: int = 50,
     offset: int = 0,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ) -> dict:
-    """Return a paginated list of all scans (newest first)."""
+    """Return a paginated list of scans belonging to the authenticated user."""
     from app.models.scan import Scan
     from sqlalchemy import select, func
 
-    total_result = await db.execute(select(func.count()).select_from(Scan))
+    total_result = await db.execute(
+        select(func.count()).select_from(Scan).where(Scan.user_id == current_user.id)
+    )
     total = total_result.scalar()
 
     result = await db.execute(
-        select(Scan).order_by(Scan.created_at.desc()).offset(offset).limit(limit)
+        select(Scan)
+        .where(Scan.user_id == current_user.id)
+        .order_by(Scan.created_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
     scans = result.scalars().all()
 
@@ -53,8 +62,33 @@ async def list_scans(
 
 @router.post("", status_code=202)
 @limiter.limit(f"{settings.MAX_SCANS_PER_IP_PER_HOUR}/hour")
-async def create_scan(request: Request, body: ScanCreateRequest, db: AsyncSession = Depends(get_db)) -> dict:
+async def create_scan(
+    request: Request,
+    body: ScanCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(lambda: None)
+) -> dict:
     """Create a scan request and dispatch the passive scanner task."""
+    from fastapi import Header
+    from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+    from app.core.security import get_current_user as _get_current_user
+
+    # Try to get user from token if provided
+    user_id = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            from app.db.session import get_db as _get_db
+            async for db_session in _get_db():
+                from app.core.security import SECRET_KEY, ALGORITHM
+                from jose import jwt
+                token = auth_header.split(" ", 1)[1]
+                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                user_id = payload.get("sub")
+                break
+        except Exception:
+            pass
+
     url = body.url.strip()
     if not url:
         raise HTTPException(status_code=422, detail="URL cannot be empty")
@@ -65,7 +99,7 @@ async def create_scan(request: Request, body: ScanCreateRequest, db: AsyncSessio
         raise HTTPException(status_code=status_code, detail=resolved_ip_or_error)
 
     client_ip = request.client.host if request.client else None
-    result = await create_new_scan(url, resolved_ip_or_error, client_ip, db, redis_client)
+    result = await create_new_scan(url, resolved_ip_or_error, client_ip, db, redis_client, user_id=user_id)
     if "error" in result:
         status_code = 503 if "Database" in result["error"] else 400
         raise HTTPException(status_code=status_code, detail=result["error"])

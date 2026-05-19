@@ -15,7 +15,7 @@ from app.tasks.scan_tasks import run_scan
 logger = logging.getLogger(__name__)
 
 
-async def create_new_scan(url: str, resolved_ip: str, client_ip: str | None, db: AsyncSession, redis_client: Redis) -> dict:
+async def create_new_scan(url: str, resolved_ip: str, client_ip: str | None, db: AsyncSession, redis_client: Redis, user_id=None) -> dict:
     """Create or reuse a recent completed scan and enqueue background processing."""
     url_hash = hashlib.sha256(url.lower().encode('utf-8')).hexdigest()
     cache_key = f"scan:url:{url_hash}"
@@ -42,7 +42,8 @@ async def create_new_scan(url: str, resolved_ip: str, client_ip: str | None, db:
         url=url,
         domain=domain,
         ip_address=resolved_ip,
-        requester_ip=client_ip
+        requester_ip=client_ip,
+        user_id=user_id
     )
     try:
         db.add(scan)
