@@ -25,7 +25,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    # bcrypt silently truncates at 72 bytes; passlib 1.7.4 raises ValueError instead.
+    # Truncate explicitly to maintain compatibility.
+    return pwd_context.hash(password.encode("utf-8")[:72].decode("utf-8", errors="ignore"))
 
 def create_access_token(subject: Union[str, Any], expires_delta: timedelta = None) -> str:
     if expires_delta:
