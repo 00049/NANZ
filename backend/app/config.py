@@ -54,3 +54,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Automatically fix Supabase pooler URLs to use the asyncpg driver
+if settings.DATABASE_URL and settings.DATABASE_URL.startswith("postgresql://"):
+    settings.DATABASE_URL = settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
