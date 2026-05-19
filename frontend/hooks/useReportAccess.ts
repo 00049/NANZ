@@ -30,20 +30,12 @@ export function useReportAccess(scanId: string): ReportAccess {
   const { scanStatus } = useScanStore();
 
   return useMemo(() => {
-    // Not authenticated — still allow access (reports are public for now)
-    if (!token || !user) {
-      return {
-        level: 'full',
-        reason: 'Free access — no payment required',
-        canViewFull: true,
-        subscriptionActive: false,
-        scanPaid: false,
-        showPaywall: false,
-      };
-    }
-
-    // Scan not yet complete
-    if (scanStatus === 'pending' || scanStatus === 'running') {
+    // Scan not yet complete — only block if this is the ACTIVE scan that's still running
+    const isActiveScan = scanStatus === 'pending' || scanStatus === 'running';
+    // We only know the scan is pending/running if this scanId matches the stored one
+    // If the user navigates directly to a report URL, we don't know the status → allow access
+    const { scanId: storedScanId } = useScanStore.getState();
+    if (isActiveScan && storedScanId === scanId) {
       return {
         level: 'pending',
         reason: 'Scan in progress',
@@ -54,7 +46,7 @@ export function useReportAccess(scanId: string): ReportAccess {
       };
     }
 
-    // All authenticated users get full access — free for now
+    // All users get full access — free for now
     return {
       level: 'full',
       reason: 'Free access — no payment required',
