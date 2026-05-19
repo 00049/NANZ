@@ -459,13 +459,25 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
 
         async def wrap_enterprise(name: str, coro, fallback: dict) -> dict:
             """Run an enterprise module coroutine with timeout and fallback."""
+            # Per-module timeouts — must all complete well within Celery's 5-min limit
+            enterprise_timeout_map = {
+                "iast_behavioral":    25.0,
+                "oast_check":         25.0,
+                "api_security":       30.0,
+                "graphql":            20.0,
+                "business_logic":     30.0,
+                "container_security": 20.0,
+                "dependency":         20.0,
+                "llm_security":       20.0,
+            }
+            timeout = enterprise_timeout_map.get(name, 25.0)
             try:
                 progress[name] = "running"
                 try:
                     await redis_client.set(progress_key, json.dumps(progress), ex=3600)
                 except Exception:
                     pass
-                result_obj = await asyncio.wait_for(coro, timeout=120.0)
+                result_obj = await asyncio.wait_for(coro, timeout=timeout)
                 progress[name] = "complete"
                 try:
                     await redis_client.set(progress_key, json.dumps(progress), ex=3600)
