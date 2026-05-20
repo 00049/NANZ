@@ -575,8 +575,14 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
             logger.warning(f"ASPM computation failed: {exc}")
             aspm_data = None
 
-        # ── AI translate ──
-        ai_items = await translate_to_plain_english(classified, domain)
+        # ── AI translate (non-fatal) ──
+        try:
+            ai_items = await asyncio.wait_for(
+                translate_to_plain_english(classified, domain), timeout=60.0
+            )
+        except Exception as ai_err:
+            logger.warning(f"AI translation failed for {domain}: {ai_err}")
+            ai_items = []
         ai_items_dict = []
         for i, item in enumerate(ai_items):
             d = item.model_dump()
@@ -585,8 +591,14 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                 d["compliance_violations"] = classified[i].get("compliance_violations", [])
             ai_items_dict.append(d)
 
-        # ── Executive summary ──
-        exec_summary = await generate_executive_summary(classified, domain)
+        # ── Executive summary (non-fatal) ──
+        try:
+            exec_summary = await asyncio.wait_for(
+                generate_executive_summary(classified, domain), timeout=60.0
+            )
+        except Exception as ai_err:
+            logger.warning(f"Executive summary generation failed for {domain}: {ai_err}")
+            exec_summary = f"Security scan completed for {domain}. Review findings for details."
 
         # ── Overall severity ──
         overall_severity = "GREEN"
@@ -632,70 +644,83 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
         duration_ms = int((end_time - start_time).total_seconds() * 1000)
 
         # ── Persist ──
-        async with async_session_maker() as db:
-            result = await db.execute(select(Scan).where(Scan.id == scan_id))
-            scan = result.scalars().first()
-            if scan:
-                scan.raw_findings = raw_findings
-                scan.scan_duration_ms = duration_ms
-                scan.status = "failed" if all_failed else "complete"
-                if all_failed:
-                    scan.error_message = "All scanning checks failed."
-                scan.completed_at = end_time
+        try:
+            async with async_session_maker() as db:
+                result = await db.execute(select(Scan).where(Scan.id == scan_id))
+                scan = result.scalars().first()
+                if scan:
+                    scan.raw_findings = raw_findings
+                    scan.scan_duration_ms = duration_ms
+                    scan.status = "failed" if all_failed else "complete"
+                    if all_failed:
+                        scan.error_message = "All scanning checks failed."
+                    scan.completed_at = end_time
 
-                if not all_failed:
-                    report = Report(
-                        scan_id=scan.id,
-                        overall_severity=overall_severity,
-                        overall_score=overall_score,
-                        risk_items=ai_items_dict,
-                        ai_summary=exec_summary,
-                        executive_summary=exec_summary,
-                        checks_run={"checks": list(raw_findings.keys()), "total": TOTAL_CHECK_DOMAINS},
-                        domain_reports=_json_safe(domain_reports),
-                        ssl_score=0,
-                        header_score=classifier_data.get("headers", {}).get("score", 0) if isinstance(classifier_data.get("headers"), dict) else 0,
-                        total_findings=len(classified),
-                        critical_count=critical_count,
-                        high_count=high_count,
-                        medium_count=medium_count,
-                        low_count=low_count,
-                        info_count=info_count,
-                        dpdp_compliance_score=dpdp_score,
-                        dpdp_issues=dpdp_issues,
-                        waf_detected=waf_data.get("waf_detected", False),
-                        waf_provider=waf_data.get("waf_provider"),
-                        javascript_findings=domain_reports.get("javascript"),
-                        cors_findings=domain_reports.get("cors"),
-                        cloud_findings=domain_reports.get("cloud"),
-                        email_findings=domain_reports.get("email"),
-                        performance_findings=domain_reports.get("performance"),
-                        tech_findings=domain_reports.get("tech"),
-                        crawl_findings=domain_reports.get("crawl"),
-                        compliance_report=compliance_report_dict,
-                        brand_threats=_json_safe(domain_reports.get("reputation", {})),
-                        bola_findings=_json_safe(enterprise_results.get("api_security", {})),
-                        api_findings=_json_safe(enterprise_results.get("api_security", {})),
-                        llm_findings=_json_safe(enterprise_results.get("llm_security", {})),
-                        oast_interactions=_json_safe(enterprise_results.get("oast", {})),
-                        cve_findings=domain_reports.get("cve")
+                    if not all_failed:
+                        report = Report(
+                            scan_id=scan.id,
+                            overall_severity=overall_severity,
+                            overall_score=overall_score,
+                            risk_items=ai_items_dict,
+                            ai_summary=exec_summary,
+                            executive_summary=exec_summary,
+                            checks_run={"checks": list(raw_findings.keys()), "total": TOTAL_CHECK_DOMAINS},
+                            domain_reports=_json_safe(domain_reports),
+                            ssl_score=0,
+                            header_score=classifier_data.get("headers", {}).get("score", 0) if isinstance(classifier_data.get("headers"), dict) else 0,
+                            total_findings=len(classified),
+                            critical_count=critical_count,
+                            high_count=high_count,
+                            medium_count=medium_count,
+                            low_count=low_count,
+                            info_count=info_count,
+                            dpdp_compliance_score=dpdp_score,
+                            dpdp_issues=dpdp_issues,
+                            waf_detected=waf_data.get("waf_detected", False),
+                            waf_provider=waf_data.get("waf_provider"),
+                            javascript_findings=domain_reports.get("javascript"),
+                            cors_findings=domain_reports.get("cors"),
+                            cloud_findings=domain_reports.get("cloud"),
+                            email_findings=domain_reports.get("email"),
+                            performance_findings=domain_reports.get("performance"),
+                            tech_findings=domain_reports.get("tech"),
+                            crawl_findings=domain_reports.get("crawl"),
+                            compliance_report=compliance_report_dict,
+                            brand_threats=_json_safe(domain_reports.get("reputation", {})),
+                            bola_findings=_json_safe(enterprise_results.get("api_security", {})),
+                            api_findings=_json_safe(enterprise_results.get("api_security", {})),
+                            llm_findings=_json_safe(enterprise_results.get("llm_security", {})),
+                            oast_interactions=_json_safe(enterprise_results.get("oast", {})),
+                            cve_findings=domain_reports.get("cve")
+                        )
+                        db.add(report)
+
+                    await db.commit()
+
+                    if not all_failed:
+                        try:
+                            await redis_client.set(cache_key, str(scan.id), ex=settings.SCAN_CACHE_HOURS * 3600)
+                        except (ConnectionError, TimeoutError, OSError, ValueError):
+                            pass
+
+                    logger.info(
+                        f"Scan {scan_id} completed in {duration_ms}ms: "
+                        f"status={scan.status}, findings={len(classified)}, "
+                        f"severity={overall_severity}, score={overall_score}"
                     )
-                    db.add(report)
-
-                await db.commit()
-
-                if not all_failed:
-                    try:
-                        await redis_client.set(cache_key, str(scan.id), ex=settings.SCAN_CACHE_HOURS * 3600)
-                    except (ConnectionError, TimeoutError, OSError, ValueError):
-                        pass
-
-                logger.info(
-                    f"Scan {scan_id} completed in {duration_ms}ms: "
-                    f"status={scan.status}, findings={len(classified)}, "
-                    f"severity={overall_severity}, score={overall_score}, "
-                    f"industry={benchmark.get('industry')}, percentile={benchmark.get('percentile')}%"
-                )
+        except Exception as persist_err:
+            logger.error(f"Scan {scan_id} DB persist failed: {persist_err}", exc_info=True)
+            # Try to at least mark the scan as complete even if report save failed
+            try:
+                async with async_session_maker() as db2:
+                    result2 = await db2.execute(select(Scan).where(Scan.id == scan_id))
+                    scan2 = result2.scalars().first()
+                    if scan2 and scan2.status not in ("complete", "failed"):
+                        scan2.status = "complete" if not all_failed else "failed"
+                        scan2.completed_at = end_time
+                        await db2.commit()
+            except Exception as fallback_err:
+                logger.error(f"Scan {scan_id} fallback status update failed: {fallback_err}")
 
     except Exception as e:
         logger.error(f"Scan {scan_id} failed catastrophically: {e}", exc_info=True)
