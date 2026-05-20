@@ -539,11 +539,13 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
             "llm_security": ent_llm,
         }
 
-        all_failed = all(
-            res.get("status") == "error"
+        # Save report if ANY module succeeded (not all_failed)
+        any_succeeded = any(
+            isinstance(res, dict) and res.get("status") == "success"
             for key, res in raw_findings.items()
-            if isinstance(res, dict) and key != "waf"
+            if key != "waf"
         )
+        all_failed = not any_succeeded
 
         # ── Classify findings with WAF context ──
         classifier_data = {k: v.get("data", {}) for k, v in raw_findings.items()}
