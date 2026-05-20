@@ -51,6 +51,56 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
+@app.on_event("startup")
+async def ensure_schema() -> None:
+    """Ensure all required DB columns exist — idempotent, safe to run on every startup."""
+    from app.db.session import engine
+    from sqlalchemy import text
+
+    ADD_COLS = [
+        # reports table — columns added in later migrations
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS waf_detected BOOLEAN",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS waf_provider VARCHAR(100)",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS javascript_findings JSONB",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS cors_findings JSONB",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS cloud_findings JSONB",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS ai_summary TEXT",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS executive_summary TEXT",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS compliance_report JSONB",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS brand_threats JSONB",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS bola_findings JSONB",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS api_findings JSONB",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS llm_findings JSONB",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS oast_interactions JSONB",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS email_findings JSONB",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS performance_findings JSONB",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS tech_findings JSONB",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS crawl_findings JSONB",
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS cve_findings JSONB",
+        # scans table
+        "ALTER TABLE scans ADD COLUMN IF NOT EXISTS user_id UUID",
+        "ALTER TABLE scans ADD COLUMN IF NOT EXISTS domain_id UUID",
+        # users table
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS hashed_password VARCHAR(255)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS company VARCHAR(255)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS scan_credits INTEGER DEFAULT 0",
+    ]
+
+    try:
+        async with engine.begin() as conn:
+            for stmt in ADD_COLS:
+                try:
+                    await conn.execute(text(stmt))
+                except Exception as col_err:
+                    logger.warning(f"Schema patch skipped ({stmt[:50]}...): {col_err}")
+        logger.info("✅ Schema self-heal complete")
+    except Exception as e:
+        logger.error(f"Schema self-heal failed: {e}", exc_info=True)
+
+
 @app.exception_handler(SQLAlchemyError)
 async def database_exception_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:
     """Return a safe 503 response for database failures."""
