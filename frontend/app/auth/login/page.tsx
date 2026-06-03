@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react";
+import { loginUser } from "@/lib/api";
+import { useAuthStore } from "@/store/authStore";
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
@@ -18,15 +20,16 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const { loginUser } = await import("@/lib/api");
-      const { useAuthStore } = await import("@/store/authStore");
-
       const res = await loginUser({ email, password });
       useAuthStore.getState().setToken(res.token.access_token);
       useAuthStore.getState().setUser(res.user);
       window.location.href = "/dashboard";
     } catch (err: any) {
-      setError(err.message || "Failed to sign in. Please check your credentials.");
+      let msg = err.message;
+      if (msg === "Failed to fetch") {
+        msg = "Unable to connect to the backend server. Please ensure the API is running (start.sh).";
+      }
+      setError(msg || "Failed to sign in. Please check your credentials.");
       setLoading(false);
     }
   };

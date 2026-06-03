@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight } from "lucide-react";
+import { registerUser } from "@/lib/api";
+import { useAuthStore } from "@/store/authStore";
 
 export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
@@ -19,15 +21,16 @@ export default function RegisterPage() {
     setError("");
 
     try {
-      const { registerUser } = await import("@/lib/api");
-      const { useAuthStore } = await import("@/store/authStore");
-
       const res = await registerUser({ name, email, password, company: "NANZ User" });
       useAuthStore.getState().setToken(res.token.access_token);
       useAuthStore.getState().setUser(res.user);
       window.location.href = "/onboarding";
     } catch (err: any) {
-      setError(err.message || "Failed to create account. Email may already be in use.");
+      let msg = err.message;
+      if (msg === "Failed to fetch") {
+        msg = "Unable to connect to the backend server. Please ensure the API is running (start.sh).";
+      }
+      setError(msg || "Failed to create account. Email may already be in use.");
       setLoading(false);
     }
   };
