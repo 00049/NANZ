@@ -4,15 +4,17 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from app.config import settings
 import app.models  # noqa: F401
 
-# Create the async engine
+# NOTE: Supabase has TWO pooler ports:
+#   - Port 6543 = Transaction mode (pgBouncer) — does NOT support prepared statements
+#   - Port 5432 = Session mode — fully supports prepared statements ✅
+# Always use port 5432 in DATABASE_URL when connecting via the Supabase pooler.
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=False,  # Set to True for SQL query logging in development
+    echo=False,
     future=True,
     pool_pre_ping=True,
-    connect_args={
-        "statement_cache_size": 0,
-    }
+    pool_size=5,
+    max_overflow=10,
 )
 
 # Create an async session maker instance
@@ -22,6 +24,7 @@ async_session_maker = async_sessionmaker(
     expire_on_commit=False,
     autoflush=False
 )
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
@@ -33,3 +36,4 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield session
         finally:
             await session.close()
+
