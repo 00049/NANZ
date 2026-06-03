@@ -89,16 +89,13 @@ async def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS scan_credits INTEGER DEFAULT 0",
     ]
 
-    try:
-        async with engine.begin() as conn:
-            for stmt in ADD_COLS:
-                try:
-                    await conn.execute(text(stmt))
-                except Exception as col_err:
-                    logger.warning(f"Schema patch skipped ({stmt[:50]}...): {col_err}")
-        logger.info("✅ Schema self-heal complete")
-    except Exception as e:
-        logger.error(f"Schema self-heal failed: {e}", exc_info=True)
+    for stmt in ADD_COLS:
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text(stmt))
+        except Exception as col_err:
+            logger.warning(f"Schema patch skipped ({stmt[:50]}...): {col_err}")
+    logger.info("✅ Schema self-heal complete")
 
 
 @app.exception_handler(SQLAlchemyError)
@@ -123,6 +120,8 @@ origins = [
     "https://www.shieldcheck.in",
     "https://nanz.in",
     "https://www.nanz.in",
+    "https://nanz-drab.vercel.app",
+    "https://frontend-eight-beige-98.vercel.app",
     settings.FRONTEND_URL,
 ]
 
