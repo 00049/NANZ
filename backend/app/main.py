@@ -167,3 +167,20 @@ app.include_router(payments.router, prefix="/api/payments")
 app.include_router(email.router, prefix="/api/tools")
 app.include_router(fixes.router, prefix="/api/v1")
 app.include_router(ingest.router)  # Mounted at /api/ingest
+
+@app.get("/api/debug-db")
+async def debug_db():
+    try:
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy import text
+        from app.config import settings
+        url = settings.DATABASE_URL
+        safe_url = url
+        if "@" in url and ":" in url:
+            safe_url = "MASKED_URL_PRESENT"
+        engine = create_async_engine(url)
+        async with engine.begin() as conn:
+            result = await conn.execute(text("SELECT * FROM users LIMIT 1"))
+        return {"status": "success", "url": safe_url, "rows": len(result.fetchall())}
+    except Exception as e:
+        return {"status": "error", "error": str(e), "type": type(e).__name__}
