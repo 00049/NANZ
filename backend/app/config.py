@@ -55,8 +55,17 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Automatically fix Supabase pooler URLs to use the asyncpg driver and strip invisible characters
+# ── Automatically fix Supabase / asyncpg DATABASE_URL ──
+# 1. Strip invisible characters (BOM, NBSP, etc.)
+# 2. Ensure the asyncpg driver prefix is used
+# 3. Inject statement_cache_size=0 to prevent pgBouncer
+#    DuplicatePreparedStatementError in both transaction and session mode.
 if settings.DATABASE_URL:
-    settings.DATABASE_URL = settings.DATABASE_URL.strip()
-    if settings.DATABASE_URL.startswith("postgresql://"):
-        settings.DATABASE_URL = settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+    url = settings.DATABASE_URL.strip()
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    # Inject statement_cache_size=0 if not already present
+    if "statement_cache_size" not in url:
+        separator = "&" if "?" in url else "?"
+        url = f"{url}{separator}prepared_statement_cache_size=0"
+    settings.DATABASE_URL = url
