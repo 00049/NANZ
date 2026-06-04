@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     SHODAN_API_KEY: str | None = None
     HIBP_API_KEY: str | None = None
     OPENAI_API_KEY: str | None = None
+    ANTHROPIC_API_KEY: str | None = None
 
     RAZORPAY_KEY_ID: str = ""
     RAZORPAY_KEY_SECRET: str = ""
