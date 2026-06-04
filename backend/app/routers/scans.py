@@ -1,5 +1,5 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 
@@ -64,6 +64,7 @@ async def list_scans(
 @limiter.limit(f"{settings.MAX_SCANS_PER_IP_PER_HOUR}/hour")
 async def create_scan(
     request: Request,
+    background_tasks: BackgroundTasks,
     body: ScanCreateRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(lambda: None)
@@ -99,7 +100,10 @@ async def create_scan(
         raise HTTPException(status_code=status_code, detail=resolved_ip_or_error)
 
     client_ip = request.client.host if request.client else None
-    result = await create_new_scan(url, resolved_ip_or_error, client_ip, db, redis_client, user_id=user_id)
+    result = await create_new_scan(
+        url, resolved_ip_or_error, client_ip, db, redis_client,
+        user_id=user_id, background_tasks=background_tasks
+    )
     if "error" in result:
         status_code = 503 if "Database" in result["error"] else 400
         raise HTTPException(status_code=status_code, detail=result["error"])

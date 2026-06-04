@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import logging
@@ -15,13 +16,26 @@ from app.tasks.scan_tasks import run_scan
 logger = logging.getLogger(__name__)
 
 
-async def create_new_scan(url: str, resolved_ip: str, client_ip: str | None, db: AsyncSession, redis_client: Redis, user_id=None) -> dict:
-    """Create or reuse a recent completed scan and enqueue background processing."""
-    url_hash = hashlib.sha256(url.lower().encode('utf-8')).hexdigest()
+async def create_new_scan(
+    url: str,
+    resolved_ip: str,
+    client_ip: str | None,
+    db: AsyncSession,
+    redis_client: Redis,
+    user_id=None,
+    background_tasks=None,
+) -> dict:
+    """Create or reuse a recent completed scan and enqueue background processing.
+
+    Dispatch order:
+      1. Celery (preferred — distributed, retryable)
+      2. FastAPI BackgroundTasks (if background_tasks passed and Celery unavailable)
+      3. asyncio.create_task (last resort — works on Render free tier single-process)
+    """
+    url_hash = hashlib.sha256(url.lower().encode("utf-8")).hexdigest()
     cache_key = f"scan:url:{url_hash}"
 
     try:
-        import asyncio
         cached_scan_id = await asyncio.wait_for(redis_client.get(cache_key), timeout=1.0)
         if cached_scan_id:
             result = await db.execute(select(Scan).where(Scan.id == cached_scan_id))
@@ -30,7 +44,7 @@ async def create_new_scan(url: str, resolved_ip: str, client_ip: str | None, db:
                 return {
                     "scan_id": existing.id,
                     "status": "complete",
-                    "estimated_duration_seconds": 0
+                    "estimated_duration_seconds": 0,
                 }
     except (TimeoutError, ConnectionError, OSError, ValueError) as e:
         logger.error(f"Redis cache check failed before scan creation: {e}", exc_info=True)
@@ -43,7 +57,7 @@ async def create_new_scan(url: str, resolved_ip: str, client_ip: str | None, db:
         domain=domain,
         ip_address=resolved_ip,
         requester_ip=client_ip,
-        user_id=user_id
+        user_id=user_id,
     )
     try:
         db.add(scan)
@@ -54,15 +68,53 @@ async def create_new_scan(url: str, resolved_ip: str, client_ip: str | None, db:
         await db.rollback()
         return {"error": "Database temporarily unavailable"}
 
+    scan_id_str = str(scan.id)
+
+    # ── 1. Try Celery first ──
+    celery_ok = False
     try:
-        run_scan.delay(str(scan.id), url)
-    except (ConnectionError, TimeoutError, OSError, RuntimeError) as e:
-        logger.error(f"Failed to enqueue scan_id={scan.id}; scan remains pending: {e}", exc_info=True)
+        run_scan.delay(scan_id_str, url)
+        celery_ok = True
+        logger.info(f"Scan {scan_id_str} enqueued via Celery.")
+    except Exception as e:
+        logger.warning(
+            f"Celery unavailable for scan_id={scan_id_str}: {e}. "
+            "Falling back to in-process asyncio task."
+        )
+
+    # ── 2 & 3. Fallback: run scan inside FastAPI's asyncio event loop ──
+    # This guarantees scans always execute on Render free tier where the
+    # Celery worker process may be killed due to memory limits.
+    if not celery_ok:
+        from app.services.scanner.orchestrator import run_full_scan
+
+        async def _background_scan() -> None:
+            async_redis = Redis.from_url(
+                settings.REDIS_URL,
+                decode_responses=True,
+                socket_connect_timeout=2.0,
+                socket_timeout=2.0,
+            )
+            try:
+                await run_full_scan(scan_id_str, url, async_redis)
+            except Exception as exc:
+                logger.error(f"Background scan {scan_id_str} failed: {exc}", exc_info=True)
+            finally:
+                await async_redis.aclose()
+
+        if background_tasks is not None:
+            # Preferred: FastAPI manages task lifecycle cleanly
+            background_tasks.add_task(_background_scan)
+            logger.info(f"Scan {scan_id_str} dispatched via FastAPI BackgroundTasks.")
+        else:
+            # Fire-and-forget asyncio task (works within running event loop)
+            asyncio.create_task(_background_scan())
+            logger.info(f"Scan {scan_id_str} dispatched via asyncio.create_task.")
 
     return {
         "scan_id": scan.id,
         "status": "pending",
-        "estimated_duration_seconds": 90  # Increased for expanded checks
+        "estimated_duration_seconds": 90,
     }
 
 
@@ -83,7 +135,7 @@ async def get_scan_status_data(scan_id: UUID, db: AsyncSession, redis_client: Re
     response_data = {
         "scan_id": scan.id,
         "status": scan.status,
-        "progress": progress
+        "progress": progress,
     }
 
     if scan.status == "complete":
@@ -128,11 +180,13 @@ async def get_scan_preview_data(scan_id: UUID, db: AsyncSession) -> dict:
     top_risks = []
     if report.risk_items:
         for item in report.risk_items[:3]:
-            top_risks.append({
-                "title": item.get("title", ""),
-                "severity": item.get("severity", ""),
-                "business_impact": item.get("business_impact", ""),
-            })
+            top_risks.append(
+                {
+                    "title": item.get("title", ""),
+                    "severity": item.get("severity", ""),
+                    "business_impact": item.get("business_impact", ""),
+                }
+            )
 
     # Truncate executive summary to ~2 sentences for free
     exec_summary = report.executive_summary or ""
