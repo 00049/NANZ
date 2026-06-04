@@ -14,6 +14,8 @@ import app.models  # noqa: F401
 # tries to re-register a cached prepared statement that pgBouncer already dropped.
 # Setting cache to 0 is safe — it just disables client-side statement caching.
 
+from uuid import uuid4
+
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
@@ -21,7 +23,10 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
-    connect_args={"statement_cache_size": 0},
+    connect_args={
+        "statement_cache_size": 0,
+        "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__",
+    },
 )
 
 # Create an async session maker instance
