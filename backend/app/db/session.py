@@ -6,8 +6,14 @@ import app.models  # noqa: F401
 
 # NOTE: Supabase has TWO pooler ports:
 #   - Port 6543 = Transaction mode (pgBouncer) — does NOT support prepared statements
-#   - Port 5432 = Session mode — fully supports prepared statements ✅
-# Always use port 5432 in DATABASE_URL when connecting via the Supabase pooler.
+#   - Port 5432 = Session mode — supports prepared statements ✅
+#
+# We set statement_cache_size=0 unconditionally to prevent:
+#   "prepared statement already exists" (DuplicatePreparedStatementError)
+# This error occurs when the asyncpg connection pool recycles connections and
+# tries to re-register a cached prepared statement that pgBouncer already dropped.
+# Setting cache to 0 is safe — it just disables client-side statement caching.
+
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
@@ -15,6 +21,7 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
+    connect_args={"statement_cache_size": 0},
 )
 
 # Create an async session maker instance
@@ -22,7 +29,7 @@ async_session_maker = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
-    autoflush=False
+    autoflush=False,
 )
 
 
@@ -36,4 +43,3 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield session
         finally:
             await session.close()
-
