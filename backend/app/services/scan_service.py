@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import ssl
 from uuid import UUID
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,24 +17,6 @@ from app.tasks.scan_tasks import run_scan
 logger = logging.getLogger(__name__)
 
 
-def _is_celery_worker_alive(timeout: float = 0.8) -> bool:
-    """
-    Ping the Celery worker pool and return True only if at least one worker
-    responds within *timeout* seconds.
-
-    This is a synchronous, blocking call that takes at most *timeout* seconds.
-    Using it before run_scan.delay() prevents tasks from silently piling up in
-    Redis when no worker is running (common on Render free tier).
-    """
-    try:
-        from app.core.celery_app import celery as celery_app
-        response = celery_app.control.ping(timeout=timeout)
-        return bool(response)
-    except Exception as exc:
-        logger.debug(f"Celery ping failed: {exc}")
-        return False
-
-
 async def create_new_scan(
     url: str,
     resolved_ip: str,
@@ -43,15 +26,14 @@ async def create_new_scan(
     user_id=None,
     background_tasks=None,
 ) -> dict:
-    """Create or reuse a recent completed scan and enqueue background processing.
+    """Create a scan record and dispatch the scanner.
 
-    Dispatch strategy (in priority order):
-      1. Celery worker (if one responds to ping within 0.8 s) — distributed, retryable
-      2. FastAPI BackgroundTasks (if background_tasks arg provided) — clean lifecycle
-      3. asyncio.create_task() — last resort, always works in a running event loop
+    Dispatch strategy:
+      - Primary: FastAPI BackgroundTasks (asyncio, always works on Render free tier)
+      - Bonus: also try Celery.delay() so a worker can pick it up if one exists
+        (duplicate-safe because run_full_scan checks status != 'pending' guard)
 
-    This guarantees scans always execute even on Render free tier where the
-    Celery background process is frequently killed due to memory constraints.
+    The asyncio path is ALWAYS used — Celery is attempted as a bonus only.
     """
     url_hash = hashlib.sha256(url.lower().encode("utf-8")).hexdigest()
     cache_key = f"scan:url:{url_hash}"
@@ -68,7 +50,7 @@ async def create_new_scan(
                     "status": "complete",
                     "estimated_duration_seconds": 0,
                 }
-    except (TimeoutError, ConnectionError, OSError, ValueError) as e:
+    except Exception as e:
         logger.warning(f"Redis cache check failed: {e}")
 
     # ── Create scan record ──
@@ -93,48 +75,50 @@ async def create_new_scan(
 
     scan_id_str = str(scan.id)
 
-    # ── Build the asyncio fallback coroutine (used if Celery unavailable) ──
+    # ── Build the asyncio background coroutine ──
     from app.services.scanner.orchestrator import run_full_scan
 
-    async def _background_scan() -> None:
+    async def _run_scan_async() -> None:
+        """Run the full scan in FastAPI's asyncio event loop."""
+        # Build a redis client for the orchestrator with SSL support
+        redis_url = settings.REDIS_URL
+        ssl_ctx = None
+        if redis_url and redis_url.startswith("rediss://"):
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+
         async_redis = Redis.from_url(
-            settings.REDIS_URL,
+            redis_url,
             decode_responses=True,
-            socket_connect_timeout=2.0,
-            socket_timeout=2.0,
+            socket_connect_timeout=3.0,
+            socket_timeout=5.0,
+            ssl_cert_reqs=None if ssl_ctx else None,
         )
         try:
+            logger.info(f"[BackgroundTask] Starting scan {scan_id_str} for {url}")
             await run_full_scan(scan_id_str, url, async_redis)
+            logger.info(f"[BackgroundTask] Scan {scan_id_str} completed.")
         except Exception as exc:
-            logger.error(f"Background scan {scan_id_str} failed: {exc}", exc_info=True)
+            logger.error(f"[BackgroundTask] Scan {scan_id_str} failed: {exc}", exc_info=True)
         finally:
             await async_redis.aclose()
 
-    # ── Dispatch: prefer Celery if a live worker exists ──
-    # Run the ping in a thread so we don't block the async event loop.
+    # ── PRIMARY: Always dispatch via asyncio ──
+    if background_tasks is not None:
+        background_tasks.add_task(_run_scan_async)
+        logger.info(f"Scan {scan_id_str} dispatched via FastAPI BackgroundTasks.")
+    else:
+        # Fallback if no BackgroundTasks available (shouldn't happen with the router fix)
+        asyncio.create_task(_run_scan_async())
+        logger.info(f"Scan {scan_id_str} dispatched via asyncio.create_task.")
+
+    # ── BONUS: Also try Celery (no-op if worker not running) ──
     try:
-        worker_alive = await asyncio.wait_for(
-            asyncio.get_event_loop().run_in_executor(None, _is_celery_worker_alive),
-            timeout=1.5,
-        )
-    except Exception:
-        worker_alive = False
-
-    if worker_alive:
-        try:
-            run_scan.delay(scan_id_str, url)
-            logger.info(f"Scan {scan_id_str} enqueued via Celery (worker is alive).")
-        except Exception as e:
-            logger.warning(f"Celery enqueue failed despite worker ping: {e}. Falling back.")
-            worker_alive = False
-
-    if not worker_alive:
-        if background_tasks is not None:
-            background_tasks.add_task(_background_scan)
-            logger.info(f"Scan {scan_id_str} dispatched via FastAPI BackgroundTasks (no Celery worker).")
-        else:
-            asyncio.create_task(_background_scan())
-            logger.info(f"Scan {scan_id_str} dispatched via asyncio.create_task (no Celery worker).")
+        run_scan.delay(scan_id_str, url)
+        logger.info(f"Scan {scan_id_str} also enqueued in Celery queue (bonus).")
+    except Exception as e:
+        logger.debug(f"Celery enqueue skipped: {e}")
 
     return {
         "scan_id": scan.id,

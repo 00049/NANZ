@@ -318,6 +318,12 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                 logger.error(f"Scan {scan_id} not found in DB.")
                 return
             await db.refresh(scan)
+            # ── Idempotency guard ──
+            # If another process (e.g. Celery worker + asyncio background task)
+            # both picked up this scan, only the first one proceeds.
+            if scan.status != "pending":
+                logger.info(f"Scan {scan_id} already in status={scan.status!r}, skipping duplicate run.")
+                return
             scan.status = "running"
             await db.commit()
             domain = scan.domain
