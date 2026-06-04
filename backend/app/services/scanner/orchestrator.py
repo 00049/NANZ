@@ -15,13 +15,23 @@ Weighted scoring with exploitability multipliers.
 Industry benchmark comparison.
 """
 
-import asyncio
-import hashlib
 import logging
+import asyncio
 import json
+import hashlib
 from datetime import datetime, timezone
 from dataclasses import asdict
-from typing import Optional
+from typing import Dict, Any, List
+
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.db.session import async_session_maker
+from app.models.scan import Scan
+from app.models.report import Report
+from app.security.url_validator import SSRFValidator, SSRFValidationError
 
 from app.services.scanner import (
     ssl_check, headers_check, dns_check, port_check,
@@ -330,6 +340,25 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
             ip_address = scan.ip_address
     except SQLAlchemyError as e:
         logger.error(f"Database error preparing scan_id={scan_id}: {e}", exc_info=True)
+        return
+
+    # ── SSRF Pre-flight Re-validation ──
+    # Even if API layer validated it, we re-validate right before executing 
+    # to protect against TOCTOU (Time-of-Check to Time-of-Use) DNS rebinding attacks.
+    try:
+        SSRFValidator.validate_url(url)
+    except SSRFValidationError as e:
+        logger.critical(f"SSRF validation failed immediately prior to execution for scan_id={scan_id}: {e}")
+        try:
+            async with async_session_maker() as db:
+                result = await db.execute(select(Scan).where(Scan.id == scan_id))
+                scan = result.scalars().first()
+                if scan:
+                    scan.status = "failed"
+                    scan.error_message = f"Security Violation: {e}"
+                    await db.commit()
+        except Exception:
+            pass
         return
 
     progress_key = f"scan:progress:{scan_id}"
