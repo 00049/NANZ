@@ -80,6 +80,7 @@ async def ensure_schema() -> None:
         # scans table
         "ALTER TABLE scans ADD COLUMN IF NOT EXISTS user_id UUID",
         "ALTER TABLE scans ADD COLUMN IF NOT EXISTS domain_id UUID",
+        "ALTER TABLE scans ADD COLUMN IF NOT EXISTS workspace_id UUID",
         # users table
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS hashed_password VARCHAR(255)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255)",
@@ -87,6 +88,29 @@ async def ensure_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS scan_credits INTEGER DEFAULT 0",
+        # new tables for report access
+        """
+        CREATE TABLE IF NOT EXISTS report_share_links (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            scan_id UUID NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+            token VARCHAR(255) UNIQUE NOT NULL,
+            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            expires_at TIMESTAMP WITH TIME ZONE,
+            is_revoked BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS report_audit_logs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            scan_id UUID NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+            viewer_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            viewer_ip VARCHAR(45),
+            action VARCHAR(50) DEFAULT 'view',
+            share_token_used VARCHAR(255),
+            timestamp TIMESTAMP WITH TIME ZONE DEFAULT now()
+        )
+        """
     ]
 
     for stmt in ADD_COLS:
@@ -153,7 +177,7 @@ async def add_security_headers(request: Request, call_next):
         )
 
 
-from app.routers import health, scans, reports, payments, email, auth, domains, workspaces, fixes
+from app.routers import health, scans, reports, payments, email, auth, domains, workspaces, fixes, report_sharing, risk_exceptions
 from app.routers import ingest  # BYOS scanner ingestion layer
 
 app.include_router(health.router)
@@ -162,9 +186,11 @@ app.include_router(domains.router, prefix="/api/domains")
 app.include_router(workspaces.router, prefix="/api/workspaces")
 app.include_router(scans.router, prefix="/api/scans")
 app.include_router(reports.router, prefix="/api/reports")
+app.include_router(report_sharing.router, prefix="/api")
 app.include_router(payments.router, prefix="/api/payments")
 app.include_router(email.router, prefix="/api/tools")
 app.include_router(fixes.router, prefix="/api/v1")
+app.include_router(risk_exceptions.router, prefix="/api/v1")
 app.include_router(ingest.router)  # Mounted at /api/ingest
 
 @app.get("/api/debug-db")
