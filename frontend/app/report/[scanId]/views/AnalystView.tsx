@@ -97,11 +97,22 @@ function AnalystFindingsTable({ findings }: { findings: RiskItem[] }) {
   const [sortKey, setSortKey] = useState<SortKey>('epss_score');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [severityFilter, setSeverityFilter] = useState<string>('ALL');
+  const [moduleFilter, setModuleFilter] = useState<string>('ALL');
   const [search, setSearch] = useState('');
+
+  const availableModules = useMemo(() => {
+    const mods = new Set<string>();
+    findings.forEach(f => {
+      if (f.module) mods.add(f.module);
+      else if (f.check_domain) mods.add(f.check_domain);
+    });
+    return ['ALL', ...Array.from(mods).sort()];
+  }, [findings]);
 
   const sorted = useMemo(() => {
     let list = [...findings];
     if (severityFilter !== 'ALL') list = list.filter(f => normalizeSeverity(f.severity) === severityFilter);
+    if (moduleFilter !== 'ALL') list = list.filter(f => f.module === moduleFilter || f.check_domain === moduleFilter);
     if (search) list = list.filter(f =>
       f.title.toLowerCase().includes(search.toLowerCase()) ||
       f.cve_id?.toLowerCase().includes(search.toLowerCase())
@@ -112,7 +123,7 @@ function AnalystFindingsTable({ findings }: { findings: RiskItem[] }) {
       return sortDir === 'desc' ? bv - av : av - bv;
     });
     return list;
-  }, [findings, sortKey, sortDir, severityFilter, search]);
+  }, [findings, sortKey, sortDir, severityFilter, moduleFilter, search]);
 
   const toggle = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
@@ -143,6 +154,16 @@ function AnalystFindingsTable({ findings }: { findings: RiskItem[] }) {
           placeholder="Search findings, CVEs…"
           className="flex-1 min-w-[180px] bg-[#0a0a0d] border border-slate-800/60 rounded-lg px-3 py-1.5 text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-blue-700"
         />
+        <select
+          value={moduleFilter}
+          onChange={e => setModuleFilter(e.target.value)}
+          className="bg-[#0a0a0d] border border-slate-800/60 rounded-lg px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-blue-700 appearance-none pr-8 bg-no-repeat"
+          style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundPosition: 'right 0.5rem center', backgroundSize: '1em' }}
+        >
+          {availableModules.map(m => (
+            <option key={m} value={m}>{m === 'ALL' ? 'All Modules' : m}</option>
+          ))}
+        </select>
         {['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].map(s => (
           <button
             key={s}
@@ -237,7 +258,8 @@ function OWASPGrid({ categories }: { categories: Record<string, OWASPCategory> |
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
       {cats.map(cat => {
-        const status = cat.status || (cat.findings_count > 0 ? 'PARTIAL' : 'TESTED');
+        const isLegacyCovered = 'covered' in cat ? (cat as any).covered : true;
+        const status = cat.status || (!isLegacyCovered ? 'NOT_TESTED' : (cat.findings_count > 0 ? 'PARTIAL' : 'TESTED'));
         const bg =
           status === 'NOT_TESTED' ? 'bg-slate-900/30 border-slate-800/30' :
           cat.findings_count === 0 ? 'bg-green-950/20 border-green-900/30' :

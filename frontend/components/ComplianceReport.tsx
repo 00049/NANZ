@@ -84,7 +84,7 @@ function FrameworkCard({ report }: { report: FrameworkReport }) {
     { label: 'Non-Compliant', icon: <XCircle className="w-4 h-4 text-red-400" /> };
 
   return (
-    <div className={`rounded-card border ${colors.ring} ${colors.bg} p-5 flex flex-col gap-4`}>
+    <div className={`rounded-card border ${colors.ring} ${colors.bg} p-5 flex flex-col gap-4 break-inside-avoid mb-4`}>
       <div className="flex items-center justify-between">
         <div>
           <h3 className={`font-bold text-lg ${colors.label}`}>{report.full_name}</h3>
@@ -158,7 +158,7 @@ export default function ComplianceReport({ data }: { data: ComplianceData | null
         </span>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="columns-1 md:columns-2 xl:columns-3 gap-4">
         {frameworks.map((fw, i) => (
           <FrameworkCard key={i} report={fw} />
         ))}

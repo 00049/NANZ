@@ -6,6 +6,7 @@ import { RiskItem, VisualWeight, FixDifficulty, SLATier, formatALE, aleColorClas
 import { normalizeSeverity } from '@/lib/severity';
 import { SeverityBadge } from '@/components/ui/SeverityBadge';
 import FindingPriorityBadge from './FindingPriorityBadge';
+import RiskExceptionModal from './RiskExceptionModal';
 
 // ─── Visual weight config ──────────────────────────────────────────────────────
 
@@ -164,7 +165,9 @@ interface RiskCardProps {
   finding: RiskItem;
   visualWeight?: VisualWeight;
   isBlurred?: boolean;
+  scanId?: string;
   onFixClick?: (finding: RiskItem) => void;
+  onExceptionSuccess?: () => void;
   // Legacy props (backward compat)
   title?: string;
   severity?: string;
@@ -175,7 +178,9 @@ export default function RiskCard({
   finding,
   visualWeight,
   isBlurred = false,
+  scanId,
   onFixClick,
+  onExceptionSuccess,
   // Legacy compat
   title: legacyTitle,
   severity: legacySeverity,
@@ -193,6 +198,7 @@ export default function RiskCard({
   const cfg = WEIGHT_CONFIG[weight];
   const [expanded, setExpanded] = useState(cfg.defaultExpanded);
   const [copied, setCopied] = useState(false);
+  const [showExceptionModal, setShowExceptionModal] = useState(false);
 
   const isMinimal = weight === 'info';
 
@@ -291,14 +297,19 @@ export default function RiskCard({
           )}
         </h4>
 
+        {/* Observation — always visible */}
+        <p className="text-sm text-slate-200 mb-2 leading-relaxed">
+          {item.observation || item.technical_detail || 'Security issue detected.'}
+        </p>
+
         {/* Business impact — always visible */}
         <p className={`text-sm mb-3 leading-relaxed ${
           weight === 'critical' ? 'text-red-200' :
           weight === 'high' ? 'text-red-300/80' :
           weight === 'medium' ? 'text-amber-200/70' :
-          'text-slate-500'
+          'text-slate-400'
         }`}>
-          {item.business_impact}
+          <span className="font-semibold opacity-70 mr-1.5">Impact:</span>{item.business_impact}
         </p>
 
         {/* ALE display */}
@@ -310,15 +321,55 @@ export default function RiskCard({
 
         {/* Expanded section */}
         {expanded && (
-          <div className={`mt-3 pt-3 border-t ${
+          <div className={`mt-3 pt-4 border-t ${
             weight === 'critical' ? 'border-red-800/30' :
             weight === 'high' ? 'border-red-900/30' :
             weight === 'medium' ? 'border-amber-900/30' : 'border-slate-800/30'
-          } space-y-3`}>
+          } space-y-4`}>
 
-            {/* Technical detail */}
-            {item.technical_detail && (
-              <p className="text-xs text-slate-400 leading-relaxed">{item.technical_detail}</p>
+            {/* Evidence / Raw Data */}
+            {item.evidence && (
+              <div className="relative group">
+                <div className="flex items-center justify-between mb-1.5">
+                  <h5 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5" /> Evidence / Raw Data
+                  </h5>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard.writeText(item.evidence || '');
+                    }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] flex items-center gap-1 text-slate-300 hover:text-white bg-slate-800/80 px-2 py-1 rounded border border-slate-700"
+                  >
+                    <Copy className="w-3 h-3" /> Copy Raw
+                  </button>
+                </div>
+                <pre className="text-[11px] font-mono text-slate-300 bg-black/60 p-3 rounded-md overflow-x-auto border border-white/5 max-h-[250px] overflow-y-auto custom-scrollbar">
+                  <code>{item.evidence}</code>
+                </pre>
+              </div>
+            )}
+            
+            {/* Remediation */}
+            {item.fix_action && (
+              <div>
+                <h5 className="text-[11px] font-bold text-green-400/80 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5" /> Remediation
+                </h5>
+                <p className="text-sm text-slate-300 leading-relaxed">{item.fix_action}</p>
+              </div>
+            )}
+            
+            {/* Verification Steps */}
+            {item.verification_steps && (
+              <div>
+                <h5 className="text-[11px] font-bold text-blue-400/80 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5" /> Verification Steps
+                </h5>
+                <div className="text-xs font-mono text-slate-300 leading-relaxed bg-blue-950/20 p-2.5 rounded border border-blue-900/30 overflow-x-auto">
+                  {item.verification_steps}
+                </div>
+              </div>
             )}
 
             {/* CVE info */}
@@ -351,7 +402,7 @@ export default function RiskCard({
               <div className="flex flex-wrap gap-1">
                 {item.compliance_violations.map((v, i) => (
                   <span key={i} className="text-[10px] px-2 py-0.5 rounded bg-purple-950/50 border border-purple-800/40 text-purple-300 font-mono">
-                    {v}
+                    {typeof v === 'string' ? v : `${v?.framework || ''} ${v?.clause_id || ''}`.trim()}
                   </span>
                 ))}
               </div>
@@ -378,15 +429,42 @@ export default function RiskCard({
               <span className="text-[10px] text-slate-600">{item.estimated_fix_time}</span>
             )}
           </div>
-          {!isBlurred && getFixButtonConfig(
-            item.fix_difficulty,
-            item.estimated_fix_time,
-            item.severity,
-            item.sla_tier,
-            handleFix,
-          )}
+          <div className="flex items-center gap-2">
+            {!item.exception_status && scanId && item.key && !isBlurred && (
+              <button 
+                onClick={() => setShowExceptionModal(true)}
+                className="text-[10px] font-medium text-slate-400 hover:text-white px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 transition-colors border border-slate-700"
+              >
+                Manage Risk
+              </button>
+            )}
+            {!isBlurred && !item.exception_status && getFixButtonConfig(
+              item.fix_difficulty,
+              item.estimated_fix_time,
+              item.severity,
+              item.sla_tier,
+              handleFix,
+            )}
+          </div>
         </div>
       </div>
+      
+      {showExceptionModal && scanId && item.key && (
+        <RiskExceptionModal
+          scanId={scanId}
+          findingKey={item.key}
+          findingTitle={item.title}
+          onClose={() => setShowExceptionModal(false)}
+          onSuccess={() => {
+            setShowExceptionModal(false);
+            if (onExceptionSuccess) {
+              onExceptionSuccess();
+            } else {
+              window.location.reload();
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -11,6 +11,7 @@ from app.main import limiter
 from app.services.scan_service import create_new_scan, get_scan_status_data, get_scan_preview_data
 from app.core.security import get_current_user
 from app.models.user import User
+from app.core.report_guard import verify_report_access
 
 router = APIRouter(tags=["Scans"])
 
@@ -121,8 +122,12 @@ async def get_scan_status(request: Request, scan_id: UUID, db: AsyncSession = De
 
 
 @router.get("/{scan_id}/preview")
-async def get_scan_preview(scan_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
-    """Return the free locked preview for a completed report."""
+async def get_scan_preview(
+    scan_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    scan=Depends(verify_report_access)
+) -> dict:
+    """Return the free locked preview for a completed report. Protected by report_guard."""
     result = await get_scan_preview_data(scan_id, db)
     if "error" in result:
         status_code = 404 if "not found" in result["error"].lower() else 400

@@ -2,8 +2,10 @@
 Classifier v2 — weighted scoring, WAF context, 15 modules, specific finding titles.
 """
 
+import json
 import logging
 from typing import Any, Optional
+from app.services.finding_content import get_finding_content
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +56,36 @@ def classify_findings(raw: dict, waf_context: Optional[dict] = None) -> list[dic
 
 
 def _add(findings: list, check: str, severity: str, key: str, data: dict, **extra: Any) -> None:
-    finding = {"check": check, "severity": severity, "key": key, "data": data,
-               "module": extra.pop("module", check),
-               "proof_confirmed": extra.pop("proof_confirmed", False),
-               "reachability": extra.pop("reachability", None)}
+    # Look up content from the catalog
+    content = get_finding_content(key, default_title=extra.get("display_title") or extra.get("detail") or key)
+    
+    # Format evidence from raw data
+    evidence_str = ""
+    if isinstance(data, (dict, list)):
+        try:
+            evidence_str = json.dumps(data, indent=2)
+        except Exception:
+            evidence_str = str(data)
+    else:
+        evidence_str = str(data)
+        
+    finding = {
+        "check": check,
+        "severity": severity,
+        "key": key,
+        "data": data, # Keep for backward compatibility
+        "module": extra.pop("module", check),
+        "proof_confirmed": extra.pop("proof_confirmed", False),
+        "reachability": extra.pop("reachability", None),
+        
+        # New 5-part structure mapped to frontend RiskItem fields
+        "title": content["title"],
+        "observation": extra.pop("detail", content["observation"]),
+        "business_impact": content["impact"],
+        "evidence": evidence_str,
+        "fix_action": content["remediation"],
+        "verification_steps": content["verification"]
+    }
     finding.update(extra)
     findings.append(finding)
 

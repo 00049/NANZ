@@ -1,5 +1,5 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi import APIRouter, Depends, HTTPException, Security, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -28,15 +28,93 @@ async def get_current_token_payload(credentials: HTTPAuthorizationCredentials = 
 
 # ── Main report ─────────────────────────────────────────────────────────────
 
+from fastapi.responses import JSONResponse
+from app.core.report_guard import verify_report_access
+from app.core.security import get_current_user_optional
+from app.models.user import User
+from typing import Optional
+
 @router.get("/{scan_id}", response_model=ReportResponse)
-async def get_report(scan_id: UUID, db: AsyncSession = Depends(get_db)) -> Report:
-    """Return the full paid report for a scan (Premium bypassed for dev)."""
+async def get_report(
+    scan_id: UUID, 
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    """Return the full paid report for a scan or 402 if unpaid."""
+    scan = await verify_report_access(scan_id, request, db, current_user)
+    
     result = await db.execute(select(Report).where(Report.scan_id == scan_id))
     report = result.scalars().first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+    
+    # Check payments table directly as source of truth
+    from app.models.payment import Payment
+    payment_result = await db.execute(
+        select(Payment).where(Payment.scan_id == scan_id, Payment.status == "paid")
+    )
+    has_paid_payment = payment_result.scalars().first() is not None
+    
+    # Sync is_paid flag if out of sync
+    if has_paid_payment and not report.is_paid:
+        report.is_paid = True
+        await db.commit()
+        
+    is_paid_scan = report.is_paid or scan.scan_type == "paid" or has_paid_payment
+    user_has_paid_plan = current_user and getattr(current_user, 'plan', None) == 'paid'
+    
+    if scan.scan_type == "free" and not is_paid_scan and not user_has_paid_plan:
+        # Generate Free tier response
+        def sev_weight(item):
+            sev = item.get("severity", "").upper()
+            return {"CRITICAL": 4, "RED": 3, "HIGH": 3, "AMBER": 2, "MEDIUM": 2, "GREEN": 1, "LOW": 1}.get(sev, 0)
+        
+        all_items = report.risk_items or []
+        top_3 = sorted(all_items, key=sev_weight, reverse=True)[:3]
+        
+        return JSONResponse(status_code=402, content={
+            "error": "payment_required",
+            "scan_id": str(scan_id),
+            "amount": 49900,
+            "currency": "INR",
+            "score": report.overall_score,
+            "grade": getattr(report, "overall_severity", ""),
+            "dpdp_score": report.dpdp_compliance_score,
+            "ale_estimate": report.ale_reduction_total,
+            "total_findings": report.total_findings,
+            "top_3_findings": [],
+            "modules_run": report.checks_run.get("checks", []) if report.checks_run else []
+        })
+
     return report
 
+# ── SBOM Download ────────────────────────────────────────────────────────────
+
+@router.get("/{scan_id}/sbom")
+async def get_sbom(scan_id: UUID, format: str = "cyclonedx", db: AsyncSession = Depends(get_db)):
+    """
+    Generate an SBOM in CycloneDX or SPDX format from the scan's domain_reports.
+    """
+    from app.services.sbom_generator import generate_sbom, SBOMFormat
+    
+    result = await db.execute(select(Report).where(Report.scan_id == scan_id))
+    report = result.scalars().first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+        
+    scan_result = await db.execute(select(Scan).where(Scan.id == scan_id))
+    scan = scan_result.scalars().first()
+    domain = scan.domain if scan else "unknown"
+    
+    scan_results = report.domain_reports or {}
+    
+    try:
+        fmt = SBOMFormat.SPDX if format.lower() == "spdx" else SBOMFormat.CYCLONEDX
+        sbom = generate_sbom(scan_results, domain, str(scan_id), fmt)
+        return sbom
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate SBOM: {e}")
 
 # ── Email ────────────────────────────────────────────────────────────────────
 

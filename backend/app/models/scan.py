@@ -16,11 +16,12 @@ class Scan(Base):
         server_default=text("gen_random_uuid()")
     )
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True, index=True)
     domain_id = Column(UUID(as_uuid=True), ForeignKey("domains.id", ondelete="SET NULL"), nullable=True, index=True)
     url = Column(Text, nullable=False)
     domain = Column(String(255), nullable=False)
     ip_address = Column(String(45), nullable=True)
-    status = Column(String(20), default="pending")  # pending/running/complete/failed
+    status = Column(String(20), default="queued")  # queued/running/complete/failed/retrying
     scan_type = Column(String(10), default="free")  # free/paid
     
     raw_findings = Column(JSONB, nullable=True)

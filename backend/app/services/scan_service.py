@@ -63,6 +63,7 @@ async def create_new_scan(
         ip_address=resolved_ip,
         requester_ip=client_ip,
         user_id=user_id,
+        status="queued"
     )
     try:
         db.add(scan)
@@ -75,54 +76,22 @@ async def create_new_scan(
 
     scan_id_str = str(scan.id)
 
-    # ── Build the asyncio background coroutine ──
-    from app.services.scanner.orchestrator import run_full_scan
-
-    async def _run_scan_async() -> None:
-        """Run the full scan in FastAPI's asyncio event loop."""
-        # Build a redis client for the orchestrator with SSL support
-        redis_url = settings.REDIS_URL
-        ssl_ctx = None
-        if redis_url and redis_url.startswith("rediss://"):
-            ssl_ctx = ssl.create_default_context()
-            ssl_ctx.check_hostname = False
-            ssl_ctx.verify_mode = ssl.CERT_NONE
-
-        async_redis = Redis.from_url(
-            redis_url,
-            decode_responses=True,
-            socket_connect_timeout=3.0,
-            socket_timeout=5.0,
-            ssl_cert_reqs=None if ssl_ctx else None,
-        )
-        try:
-            logger.info(f"[BackgroundTask] Starting scan {scan_id_str} for {url}")
-            await run_full_scan(scan_id_str, url, async_redis)
-            logger.info(f"[BackgroundTask] Scan {scan_id_str} completed.")
-        except Exception as exc:
-            logger.error(f"[BackgroundTask] Scan {scan_id_str} failed: {exc}", exc_info=True)
-        finally:
-            await async_redis.aclose()
-
-    # ── PRIMARY: Always dispatch via asyncio ──
-    if background_tasks is not None:
-        background_tasks.add_task(_run_scan_async)
-        logger.info(f"Scan {scan_id_str} dispatched via FastAPI BackgroundTasks.")
-    else:
-        # Fallback if no BackgroundTasks available (shouldn't happen with the router fix)
-        asyncio.create_task(_run_scan_async())
-        logger.info(f"Scan {scan_id_str} dispatched via asyncio.create_task.")
-
-    # ── BONUS: Also try Celery (no-op if worker not running) ──
+    # ── PRIMARY: Dispatch via Celery ──
     try:
-        run_scan.delay(scan_id_str, url)
-        logger.info(f"Scan {scan_id_str} also enqueued in Celery queue (bonus).")
+        logger.info(f"Dispatching scan {scan_id_str} to Celery workers.")
+        run_scan.apply_async(args=[scan_id_str, url])
     except Exception as e:
-        logger.debug(f"Celery enqueue skipped: {e}")
+        logger.error(f"Failed to enqueue Celery task: {e}", exc_info=True)
+        # If Celery is completely down, fail immediately.
+        scan.status = "failed"
+        scan.error_message = "Scan orchestration service is currently unavailable."
+        db.add(scan)
+        await db.commit()
+        return {"error": "Service unavailable: Failed to enqueue scan"}
 
     return {
         "scan_id": scan.id,
-        "status": "pending",
+        "status": "queued",
         "estimated_duration_seconds": 90,
     }
 

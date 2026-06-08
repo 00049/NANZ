@@ -249,15 +249,21 @@ def compute_owasp_top10_coverage(
             all_finding_keys.add(key)
 
     all_modules_run = set()
-    # From raw findings keys (modules that ran)
+    # Also add module prefixes from findings checks
     for f in all_findings:
         check = f.get("check") or f.get("module") or ""
         if check:
-            all_modules_run.add(check)
+            # Reconstruct the _check suffix since findings often use just the prefix or full name
+            if check.endswith("_check") or check.endswith("_security"):
+                all_modules_run.add(check)
+            else:
+                all_modules_run.add(f"{check}_check")
+
     # From enterprise results
     for k, v in enterprise_results.items():
         if v and not (isinstance(v, dict) and v.get("error")):
             all_modules_run.add(k)
+            all_modules_run.add(f"{k}_check") # Also add the suffixed version just in case
 
     categories: dict[str, dict] = {}
     tested_count = 0

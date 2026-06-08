@@ -9,12 +9,43 @@ import {
 } from '@/lib/api';
 import { useReportAccess } from '@/hooks/useReportAccess';
 import { useAuthStore } from '@/store/authStore';
+import { useScanStore } from '@/store/scanStore';
 import { FullReport, RemediationRoadmap as RoadmapType, RiskItem, ASPMReport, severityToWeight } from '@/types';
 import { normalizeSeverity, sortBySeverity } from '@/lib/severity';
 import { SeverityBadge } from '@/components/ui/SeverityBadge';
 import { useFindingsKeyboard } from '@/hooks/useFindingsKeyboard';
 import KeyboardShortcutsModal from '@/components/dashboard/KeyboardShortcutsModal';
 import { toast } from 'sonner';
+
+// ─── Helper: split flat risk_items into severity-grouped arrays ───────────────
+function normalizeReport(rep: any): FullReport {
+  const allItems: RiskItem[] = rep.risk_items || rep.findings || [];
+  // Only normalize if the server didn't already send grouped arrays
+  if (!rep.critical_risks && !rep.high_risks && allItems.length > 0) {
+    const critical: RiskItem[] = [];
+    const high: RiskItem[] = [];
+    const medium: RiskItem[] = [];
+    const low: RiskItem[] = [];
+    const info: RiskItem[] = [];
+    for (const f of allItems) {
+      const ns = normalizeSeverity(f.severity);
+      if (ns === 'CRITICAL') critical.push(f);
+      else if (ns === 'HIGH') high.push(f);
+      else if (ns === 'MEDIUM') medium.push(f);
+      else if (ns === 'LOW') low.push(f);
+      else info.push(f);
+    }
+    return {
+      ...rep,
+      critical_risks: critical,
+      high_risks: high,
+      medium_risks: medium,
+      low_risks: low,
+      info_risks: info,
+    };
+  }
+  return rep as FullReport;
+}
 
 // Components
 import Navbar from '@/components/Navbar';
@@ -40,6 +71,7 @@ import OWASPCoverageMap from '@/components/OWASPCoverageMap';
 import EnterpriseRemediation from '@/components/EnterpriseRemediation';
 import DependencyScanPanel from '@/components/DependencyScanPanel';
 import LLMSecurityPanel from '@/components/LLMSecurityPanel';
+import PaywallSection from '@/components/PaywallSection';
 
 // Role views
 import CISOView from './views/CISOView';
@@ -82,9 +114,11 @@ function escalateSeverity(current: string): string {
 function FindingsList({
   findings,
   onFixClick,
+  scanId,
 }: {
   findings: RiskItem[];
-  onFixClick: (f: RiskItem) => void;
+  onFixClick?: (f: RiskItem) => void;
+  scanId?: string;
 }) {
   const [showLow, setShowLow] = useState(false);
   const [acknowledged, setAcknowledged] = useState<Set<number>>(new Set());
@@ -157,7 +191,12 @@ function FindingsList({
         <RiskCard
           finding={f}
           visualWeight={weight as any}
+          scanId={scanId}
           onFixClick={onFixClick}
+          onExceptionSuccess={() => {
+            // Can be handled at top level, but for now reload to fetch new score
+            window.location.reload();
+          }}
         />
         {isAck && (
           <span className="absolute top-3 right-3 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: '#6B7280', color: '#FFFFFF', opacity: 0.7 }}>
@@ -256,44 +295,67 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
   const [aspmData, setAspmData] = useState<ASPMReport | null>(null);
   const [enterpriseLoading, setEnterpriseLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [activeModal, setActiveModal] = useState<RiskItem | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [role, setRole] = useRole();
-  const { canViewFull, level } = useReportAccess(params.scanId);
+  const access = useReportAccess(params.scanId);
+  const { canViewFull, level } = access;
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
 
   useEffect(() => {
-    // If we've finished checking and they don't have access, kick them back to home
-    if (level !== 'loading' && level !== 'pending' && !canViewFull) {
-      router.replace('/');
-    }
-  }, [level, canViewFull, router]);
-
-  useEffect(() => {
-    if (!token) {
+    // Only redirect for hard errors (no auth, forbidden, not found)
+    if (level === 'no_auth') {
       router.replace(`/auth/login?returnUrl=/report/${params.scanId}`);
-      return;
     }
+  }, [level, router, params.scanId]);
 
-    const fetchData = async () => {
+  // Always fetch the main report on load — backend is the source of truth for payment status
+  useEffect(() => {
+    const fetchMainReport = async () => {
       try {
-        const [rep, road, comp, brand] = await Promise.allSettled([
-          getFullReport(params.scanId, token),
-          getRoadmap(params.scanId, token),
-          getComplianceReport(params.scanId),
-          getBrandThreats(params.scanId),
-        ]);
-        if (rep.status === 'fulfilled') setReport(rep.value);
-        if (road.status === 'fulfilled') setRoadmapData(road.value);
-        if (comp.status === 'fulfilled') setCompliance(comp.value);
-        if (brand.status === 'fulfilled') setBrandThreats(brand.value);
-      } catch (err) {
-        console.error('Failed to fetch report data:', err);
+        const rep = await getFullReport(params.scanId, token);
+        
+        if (rep && rep.error === 'payment_required') {
+          // Backend says not paid — show preview data
+          setReport({
+            domain: '',
+            overall_score: rep.score,
+            overall_severity: rep.grade,
+            dpdp_compliance_score: rep.dpdp_score,
+            total_ale_reduction_inr: rep.ale_estimate,
+            risk_items: rep.top_3_findings,
+            total_findings: rep.total_findings,
+            checks_run: { checks: rep.modules_run },
+          } as any);
+        } else {
+          // Backend returned full report — user has paid
+          // Normalize: split flat risk_items into severity-grouped arrays
+          setReport(normalizeReport(rep));
+          useScanStore.setState({ isPaid: true });
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(`paid_scan_${params.scanId}`, 'true');
+          }
+        }
+      } catch (err: any) {
+        if (err?.response?.status === 401) {
+          router.replace(`/auth/login?returnUrl=/report/${params.scanId}`);
+          return;
+        }
+        if (err?.response?.status === 403) setErrorStatus(403);
+        else if (err?.response?.status === 404) setErrorStatus(404);
       } finally {
         setIsLoading(false);
       }
+    };
+    fetchMainReport();
+  }, [params.scanId, token]);
 
+  // Fetch enterprise data only when access is confirmed
+  useEffect(() => {
+    const fetchEnterpriseData = async () => {
       try {
         setEnterpriseLoading(true);
         const [entResult, aspmResult] = await Promise.allSettled([
@@ -307,6 +369,16 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
         if (aspmResult.status === 'fulfilled' && aspmResult.value) {
           setAspmData(aspmResult.value);
         }
+        
+        const [road, comp, brand] = await Promise.allSettled([
+          getRoadmap(params.scanId, token),
+          getComplianceReport(params.scanId),
+          getBrandThreats(params.scanId),
+        ]);
+        
+        if (road.status === 'fulfilled') setRoadmapData(road.value);
+        if (comp.status === 'fulfilled') setCompliance(comp.value);
+        if (brand.status === 'fulfilled') setBrandThreats(brand.value);
       } catch (err) {
         console.error('Failed to fetch enterprise data:', err);
       } finally {
@@ -314,9 +386,10 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
       }
     };
     if (canViewFull) {
-      fetchData();
+      fetchEnterpriseData();
     }
-  }, [params.scanId, canViewFull, router, token]);
+  }, [params.scanId, canViewFull, token]);
+
 
   const handleFixClick = useCallback((finding: RiskItem) => {
     setActiveModal(finding);
@@ -339,17 +412,51 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
     );
   }
 
-  if (!report) {
+  if (errorStatus === 403) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#030303] text-slate-300">
-        <div className="text-center">
-          <ShieldAlert className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <h2 className="text-xl font-bold mb-2">Failed to load report</h2>
-          <p className="text-slate-500 text-sm">The scan may still be running or the report was not found.</p>
+        <div className="text-center p-8 bg-[#09090b] rounded-2xl border border-slate-800">
+          <ShieldAlert className="w-16 h-16 text-amber-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-black mb-2">Access Denied</h2>
+          <p className="text-slate-400 text-sm max-w-md mx-auto">
+            You do not have permission to view this report. It may belong to another organization, or your share link has expired.
+          </p>
+          <button onClick={() => router.push('/dashboard')} className="mt-6 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
+            Return to Dashboard
+          </button>
         </div>
       </div>
     );
   }
+
+  if (errorStatus === 404 || !report) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#030303] text-slate-300">
+        <div className="text-center p-10 bg-[#09090b] rounded-2xl border border-slate-800 max-w-md w-full mx-4">
+          <ShieldAlert className="w-14 h-14 text-red-400 mx-auto mb-5" />
+          <h2 className="text-2xl font-black mb-2 text-white">Scan Failed</h2>
+          <p className="text-slate-400 text-sm mb-6 leading-relaxed">
+            The security scan could not be completed for this URL. This can happen if the domain is unreachable, uses unusual DNS configurations, or the scan timed out.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={() => router.push('/dashboard/new-scan')}
+              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors text-sm"
+            >
+              Try New Scan
+            </button>
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-semibold transition-colors text-sm border border-slate-700"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
 
   // Flatten all findings into a stable array
   const allFindings: RiskItem[] = [
@@ -384,8 +491,10 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
       <ReportSidebar
         isOpen={mobileMenuOpen}
         onClose={() => setMobileMenuOpen(false)}
+        isCollapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
-      <main className="flex-1 bg-[#030303] pt-16 lg:pl-[260px] pb-20 print:bg-white print:text-black print:pt-0 print:pl-0">
+      <main className={`flex-1 bg-[#030303] pt-16 pb-20 print:bg-white print:text-black print:pt-0 print:pl-0 transition-all duration-300 ${sidebarCollapsed ? 'lg:pl-[80px]' : 'lg:pl-[260px]'}`}>
         <div className="max-w-5xl mx-auto px-4 md:px-6 py-10 flex flex-col gap-14">
 
           {/* ─── MAIN CONTENT ─────────────────────────────────────────── */}
@@ -460,6 +569,17 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
                 </div>
               </div>
             </section>
+
+            {level === 'preview' && (
+              <section id="preview-findings" className="scroll-mt-32">
+                <h2 className="text-xl font-black text-slate-100 mb-2 border-b border-slate-800/60 pb-3">
+                  Top Critical Findings
+                </h2>
+                <FindingsList findings={findings} onFixClick={handleFixClick} scanId={params.scanId} />
+              </section>
+            )}
+
+            <PaywallSection lockedCount={(report.total_findings || 0) - findings.length} scanId={params.scanId} access={access as any}>
 
             {/* ── ROLE SELECTOR + ROLE VIEW ── */}
             <section id="role-view" className="scroll-mt-32">
@@ -549,23 +669,27 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
             </section>
 
             {/* ── ALL FINDINGS (progressive disclosure) ── */}
-            <section id="all-findings" className="scroll-mt-32">
-              <h2 className="text-xl font-black text-slate-100 mb-2 border-b border-slate-800/60 pb-3">
-                All Security Findings
-                <span className="ml-3 text-sm font-normal text-slate-500">({findings.length})</span>
-              </h2>
-              <p className="text-xs text-slate-600 mb-6">
-                Critical and high severity findings are shown prominently. Lower-priority findings are collapsed to reduce cognitive load.
-              </p>
-              {findings.length === 0 ? (
-                <div className="text-center py-16 text-slate-500">
-                  <CheckCircle2 className="w-10 h-10 text-green-400 mx-auto mb-3" />
-                  <p>No findings to display.</p>
-                </div>
-              ) : (
-                <FindingsList findings={findings} onFixClick={handleFixClick} />
-              )}
-            </section>
+            {level === 'full' && (
+              <section id="all-findings" className="scroll-mt-32">
+                <h2 className="text-xl font-black text-slate-100 mb-2 border-b border-slate-800/60 pb-3">
+                  All Security Findings
+                  <span className="ml-3 text-sm font-normal text-slate-500">({findings.length})</span>
+                </h2>
+                <p className="text-xs text-slate-600 mb-6">
+                  Critical and high severity findings are shown prominently. Lower-priority findings are collapsed to reduce cognitive load.
+                </p>
+                {findings.length === 0 ? (
+                  <div className="text-center py-16 text-slate-500">
+                    <CheckCircle2 className="w-10 h-10 text-green-400 mx-auto mb-3" />
+                    <p>No findings to display.</p>
+                  </div>
+                ) : (
+                  <FindingsList findings={findings} onFixClick={handleFixClick} scanId={params.scanId} />
+                )}
+              </section>
+            )}
+
+            </PaywallSection>
 
           </div>
         </div>

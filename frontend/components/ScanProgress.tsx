@@ -30,6 +30,12 @@ export default function ScanProgress() {
     if (s === 'complete' || s === 'completed') return 'done';
     return s || 'pending';
   };
+
+  const getModStatus = (key: string) => {
+    const s = progress[key];
+    if (s === 'queued' || s === 'retrying') return 'pending';
+    return s || 'pending';
+  };
   
   const getStatusIcon = (raw?: string) => {
     const status = norm(raw);
@@ -58,7 +64,7 @@ export default function ScanProgress() {
       <h3 className="text-lg font-semibold mb-4 text-text-primary border-b border-card-border pb-2">Running 15 Security Modules</h3>
       <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
         {MODULES.map(mod => {
-          const status = progress[mod.key] || 'pending';
+          const status = getModStatus(mod.key);
           const n = norm(status);
           return (
             <div key={mod.key} className="flex items-center justify-between p-3 rounded-md bg-background border border-card-border transition-colors hover:border-primary/50">

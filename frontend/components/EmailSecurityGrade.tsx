@@ -1,3 +1,5 @@
+import { CheckCircle2, XCircle } from 'lucide-react';
+
 export default function EmailSecurityGrade({ grade, details }: { grade: string, details: any }) {
   const getGradeColor = (g: string) => {
     if (g.startsWith('A')) return 'text-low';
@@ -6,7 +8,17 @@ export default function EmailSecurityGrade({ grade, details }: { grade: string, 
   };
 
   const passFailIcon = (status: boolean) => 
-    status ? <span className="text-low font-bold">✅ PASS</span> : <span className="text-high font-bold">❌ FAIL</span>;
+    status ? (
+      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold tracking-widest uppercase">
+        <CheckCircle2 className="w-3.5 h-3.5" />
+        Pass
+      </span>
+    ) : (
+      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 text-[10px] font-bold tracking-widest uppercase">
+        <XCircle className="w-3.5 h-3.5" />
+        Fail
+      </span>
+    );
 
   return (
     <div className="flex flex-col md:flex-row gap-8 bg-surface rounded-card border border-card-border p-8 shadow-xl">

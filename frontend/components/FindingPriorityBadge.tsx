@@ -43,9 +43,10 @@ export default function FindingPriorityBadge({ finding }: FindingPriorityBadgePr
   }
   if (finding.compliance_violations && finding.compliance_violations.length > 0) {
     finding.compliance_violations.slice(0, 2).forEach(v => {
+      const vStr = typeof v === 'string' ? v : `${v?.framework || ''} ${v?.clause_id || ''}`.trim();
       reasons.push({
         icon: <BookOpen className="w-3 h-3 text-purple-400" />,
-        text: `Regulatory violation: ${v}`,
+        text: `Regulatory violation: ${vStr}`,
         priority: 'high',
       });
     });

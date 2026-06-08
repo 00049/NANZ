@@ -1,9 +1,25 @@
 'use client';
 
-import { Lock, ArrowRight } from 'lucide-react';
-import Link from 'next/link';
+import { Lock, ArrowRight, Loader2 } from 'lucide-react';
+import { usePayment } from '@/hooks/usePayment';
+import { useAuthStore } from '@/store/authStore';
 
-export default function PaywallSection({ lockedCount, scanId }: { lockedCount: number, scanId: string }) {
+interface PaywallSectionProps {
+  lockedCount: number;
+  scanId: string;
+  access: { level: 'full' | 'preview' | 'loading' | 'pending' | 'no_auth', reason?: string };
+  children?: React.ReactNode;
+}
+
+export default function PaywallSection({ lockedCount, scanId, access, children }: PaywallSectionProps) {
+  const { openPayment, isLoading, error } = usePayment();
+  const { user } = useAuthStore();
+  const paymentEmail = user?.email || 'guest@example.com';
+
+  if (access.level === 'full') {
+    return <>{children}</>;
+  }
+
   return (
     <div className="relative mt-8">
       {/* Background elements to suggest more cards */}
@@ -15,7 +31,7 @@ export default function PaywallSection({ lockedCount, scanId }: { lockedCount: n
         </div>
         
         <h3 className="text-2xl font-bold text-text-primary mb-2">
-          {lockedCount} More Security Issues Found
+          {lockedCount > 0 ? `${lockedCount} More Security Issues Found` : 'Enterprise Report Locked'}
         </h3>
         <p className="text-text-muted mb-6">
           Unlock the full enterprise-grade report to secure your business and comply with the DPDP Act.
@@ -33,17 +49,26 @@ export default function PaywallSection({ lockedCount, scanId }: { lockedCount: n
         </div>
         
         <div className="flex flex-col items-center justify-center">
-          <div className="mb-4">
-            <span className="text-xl font-bold text-nanz-500">Premium Account Active</span>
-            <span className="text-text-muted ml-2">All reports unlocked</span>
-          </div>
+          {error && (
+            <div className="text-red-400 text-sm mb-4 px-4 py-2 bg-red-950/30 rounded border border-red-900/50">
+              {error}
+            </div>
+          )}
           
-          <Link href={`/report/${scanId}`} className="w-full sm:w-auto bg-primary hover:bg-primary-hover text-primary-foreground font-semibold py-3 px-8 rounded-btn transition-colors flex items-center justify-center gap-2">
-            View Full Detailed Report <ArrowRight className="w-4 h-4" />
-          </Link>
+          <button 
+            onClick={() => openPayment(scanId, paymentEmail)}
+            disabled={isLoading}
+            className="w-full sm:w-auto bg-primary hover:bg-primary-hover text-primary-foreground font-semibold py-3 px-8 rounded-btn transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {isLoading ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Preparing Checkout...</>
+            ) : (
+              <>Unlock Full Report — ₹499 <ArrowRight className="w-4 h-4" /></>
+            )}
+          </button>
           
           <p className="text-xs text-text-muted mt-4">
-            Full access granted for premium users.
+            One-time payment. Secure checkout via Razorpay.
           </p>
         </div>
       </div>

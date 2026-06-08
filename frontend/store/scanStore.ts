@@ -19,7 +19,7 @@ export interface PartialModuleResult {
 interface ScanStore {
   scanId: string | null;
   scanUrl: string | null;
-  scanStatus: 'idle' | 'pending' | 'running' | 'complete' | 'failed';
+  scanStatus: 'idle' | 'pending' | 'queued' | 'retrying' | 'running' | 'complete' | 'failed';
   progress: Record<string, string>;
   isPaid: boolean;
   reportJWT: string | null;
@@ -33,11 +33,14 @@ interface ScanStore {
   elapsedSeconds: number;
   preliminaryScore: number | null;
   preliminaryCounts: { critical: number; high: number; medium: number; low: number } | null;
+  estimatedDuration: number;
+  scanProgress: Record<string, 'pending' | 'running' | 'complete' | 'failed'>;
 
   // Actions
   initScan: (id: string, url: string) => void;
+  setScanId: (id: string | null) => void;
   updateProgress: (progress: Record<string, string>) => void;
-  setStatus: (status: 'idle' | 'pending' | 'running' | 'complete' | 'failed') => void;
+  setStatus: (status: 'idle' | 'pending' | 'queued' | 'retrying' | 'running' | 'complete' | 'failed') => void;
   setPreviewData: (data: PreviewResponse) => void;
   setReportJWT: (token: string) => void;
   setFullReport: (data: FullReport) => void;
@@ -80,6 +83,8 @@ export const useScanStore = create<ScanStore>()(
         elapsedSeconds: 0,
         preliminaryScore: null,
         preliminaryCounts: null,
+        isPaid: false,
+        reportJWT: null,
       }),
 
       updateProgress: (progress) => set({ progress }),
@@ -122,12 +127,11 @@ export const useScanStore = create<ScanStore>()(
       }),
     }),
     {
-      name: 'nanz-storage',
+      name: 'nanz-scan-storage-v2',
       partialize: (state) => ({
         scanId: state.scanId,
         scanUrl: state.scanUrl,
         reportJWT: state.reportJWT,
-        isPaid: state.isPaid,
       }),
     }
   )

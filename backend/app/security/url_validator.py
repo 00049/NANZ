@@ -60,17 +60,22 @@ class SSRFValidator:
 
         # 2. DNS Resolution (Pre-flight check for rebinding protection)
         try:
-            # We resolve A (IPv4) and AAAA (IPv6) records
+            # Use reliable public DNS instead of system DNS (avoids broken IPv6 nameservers)
+            resolver = dns.resolver.Resolver(configure=False)
+            resolver.nameservers = ['8.8.8.8', '1.1.1.1', '8.8.4.4']
+            resolver.lifetime = 5.0
+            resolver.timeout = 3.0
+
             resolved_ips: List[str] = []
             
             try:
-                answers_ipv4 = dns.resolver.resolve(hostname, 'A', lifetime=2.0)
+                answers_ipv4 = resolver.resolve(hostname, 'A')
                 resolved_ips.extend([rdata.to_text() for rdata in answers_ipv4])
             except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
                 pass
                 
             try:
-                answers_ipv6 = dns.resolver.resolve(hostname, 'AAAA', lifetime=2.0)
+                answers_ipv6 = resolver.resolve(hostname, 'AAAA')
                 resolved_ips.extend([rdata.to_text() for rdata in answers_ipv6])
             except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
                 pass

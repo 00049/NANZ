@@ -295,12 +295,24 @@ def compute_aspm_report(
     all_findings_enriched = _enrich_findings_with_risk_metrics(all_findings, raw_findings)
     portfolio_summary = _compute_portfolio_risk_summary(all_findings_enriched)
 
+    # ── Modules tested ──
+    # Compute modules_tested first so we can pass it to the OWASP mapper
+    modules_tested = list(raw_findings.keys()) + list(enterprise_results.keys())
+    enterprise_keys = set(enterprise_results.keys())
+    modules_with_findings = [
+        k for k, v in enterprise_results.items()
+        if v and not v.get("error")
+    ] + [
+        k for k in raw_findings
+        if raw_findings[k].get("status") == "success"
+    ]
+
     # ── Structured OWASP Coverage (v2 — uses structured mapper) ──
     try:
         from app.services.owasp_mapper import compute_owasp_top10_coverage
         from app.services.owasp_llm_mapper import compute_owasp_llm_coverage
 
-        owasp_top10_structured = compute_owasp_top10_coverage(all_findings, enterprise_results)
+        owasp_top10_structured = compute_owasp_top10_coverage(all_findings, enterprise_results, modules_tested)
         llm_results = enterprise_results.get("llm_security") or {}
         owasp_llm_structured = compute_owasp_llm_coverage(llm_results, all_findings)
     except Exception as e:
@@ -312,7 +324,7 @@ def compute_aspm_report(
     compliance_v2 = _compute_deep_compliance(all_findings, raw_findings)
 
     # ── Legacy OWASP coverage (kept for backward compat) ──
-    owasp_coverage = _compute_owasp_coverage(all_findings, enterprise_results)
+    owasp_coverage = _compute_owasp_coverage(all_findings, enterprise_results, raw_findings)
     covered_count = sum(1 for c in owasp_coverage if c["covered"])
 
     # ── Build remediation roadmap ──
@@ -324,17 +336,6 @@ def compute_aspm_report(
     dpdp_impact = _estimate_compliance_impact(all_findings, "dpdp")
     gdpr_impact = _estimate_compliance_impact(all_findings, "gdpr")
     pci_impact = _estimate_compliance_impact(all_findings, "pci")
-
-    # ── Modules tested ──
-    modules_tested = list(raw_findings.keys()) + list(enterprise_results.keys())
-    enterprise_keys = set(enterprise_results.keys())
-    modules_with_findings = [
-        k for k, v in enterprise_results.items()
-        if v and not v.get("error")
-    ] + [
-        k for k in raw_findings
-        if raw_findings[k].get("status") == "success"
-    ]
 
     return ASPMReport(
         aspm_score=aspm_score,
@@ -614,28 +615,53 @@ def _merge_enterprise_findings(all_findings: list, enterprise_results: dict) -> 
 def _compute_owasp_coverage(
     all_findings: list,
     enterprise_results: dict,
+    raw_findings: dict,
 ) -> list[OWASPCoverage]:
     """Compute OWASP Top 10 coverage from all findings."""
     results = []
     finding_keys = {f.get("key", "") for f in all_findings}
+    # Findings use prefixed check names like 'ssl_no_ocsp', 'headers_many_missing', 'cors_wildcard_html'
+    # Extract the module prefix from each finding's check field
     finding_checks = {f.get("check", "") for f in all_findings}
 
+    def _check_matches_module(module_name: str) -> bool:
+        """Check if any finding's check field starts with this module's prefix."""
+        # Strip _check suffix from module name to get the prefix
+        prefix = module_name.replace("_check", "").replace("_security", "")
+        # Check exact module name in enterprise_results
+        if module_name in enterprise_results and enterprise_results[module_name]:
+            return True
+        # Check if the module was run in raw_findings (from orchestrator)
+        if prefix in raw_findings and raw_findings[prefix].get("status") == "success":
+            return True
+        # Check if any finding's check field starts with the prefix (fallback)
+        for check in finding_checks:
+            if check and (check.startswith(prefix) or check == prefix):
+                return True
+        return False
+
     for category_id, category_data in OWASP_TOP10_COVERAGE.items():
-        # Check if any module for this category was tested
+        # Check which modules for this category were actually tested
         modules_tested = [
             m for m in category_data["modules"]
-            if m in finding_checks or any(
-                m in k.get("modules_tested", [])
-                for k in [enterprise_results.get(m) or {}]
-            )
+            if _check_matches_module(m)
         ]
 
-        # Count findings in this category
-        cat_findings = [
-            f for f in all_findings
-            if f.get("key") in category_data["finding_keys"]
-            or f.get("check") in category_data["modules"]
-        ]
+        # Count findings in this category — match by key prefix or check prefix
+        cat_findings = []
+        for f in all_findings:
+            f_key = f.get("key", "")
+            f_check = f.get("check", "")
+            # Match by explicit finding keys
+            if f_key in category_data["finding_keys"]:
+                cat_findings.append(f)
+                continue
+            # Match by module prefix (e.g. finding check 'ssl_no_ocsp' matches module 'ssl_check')
+            for m in category_data["modules"]:
+                prefix = m.replace("_check", "").replace("_security", "")
+                if f_check and (f_check.startswith(prefix) or f_check == prefix):
+                    cat_findings.append(f)
+                    break
 
         worst_severity = "INFO"
         severity_order = ["CRITICAL", "RED", "AMBER", "GREEN", "INFO"]
@@ -654,6 +680,7 @@ def _compute_owasp_coverage(
         ).__dict__)
 
     return results
+
 
 
 def _build_remediation_roadmap(

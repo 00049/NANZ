@@ -72,7 +72,11 @@ def _calculate_score(result: dict) -> tuple[int, str]:
 
 async def run(domain: str) -> EmailSecurityResult:
     """Run full email security analysis."""
-    dns_result = await run_dns_check(domain)
+    # Email records (SPF, DMARC, MX) are almost always on the root domain,
+    # so we strip 'www.' if the user entered it.
+    check_domain = domain[4:] if domain.lower().startswith("www.") else domain
+    
+    dns_result = await run_dns_check(check_domain)
     # Convert dataclass to dict
     dns_dict = dns_result.__dict__
     

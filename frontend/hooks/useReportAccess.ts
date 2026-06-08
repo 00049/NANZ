@@ -27,7 +27,7 @@ export interface ReportAccess {
 
 export function useReportAccess(scanId: string): ReportAccess {
   const { user, token } = useAuthStore();
-  const { scanStatus } = useScanStore();
+  const { scanStatus, isPaid } = useScanStore();
 
   return useMemo(() => {
     // Scan not yet complete — only block if this is the ACTIVE scan that's still running
@@ -46,14 +46,31 @@ export function useReportAccess(scanId: string): ReportAccess {
       };
     }
 
-    // All users get full access — free for now
+    // Check paid status
+    let isLocallyPaid = false;
+    if (typeof window !== 'undefined') {
+      isLocallyPaid = localStorage.getItem(`paid_scan_${scanId}`) === 'true';
+    }
+    const isThisScanPaidInStore = isPaid && storedScanId === scanId;
+
+    if (isLocallyPaid || isThisScanPaidInStore) {
+      return {
+        level: 'full',
+        reason: 'Paid access',
+        canViewFull: true,
+        subscriptionActive: false,
+        scanPaid: true,
+        showPaywall: false,
+      };
+    }
+
     return {
-      level: 'full',
-      reason: 'Free access — no payment required',
-      canViewFull: true,
+      level: 'preview',
+      reason: 'payment_required',
+      canViewFull: false,
       subscriptionActive: false,
       scanPaid: false,
-      showPaywall: false,
+      showPaywall: true,
     };
-  }, [token, user, scanStatus, scanId]);
+  }, [token, user, scanStatus, scanId, isPaid]);
 }

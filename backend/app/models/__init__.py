@@ -5,5 +5,7 @@ from app.models.scan import Scan
 from app.models.report import Report
 from app.models.payment import Payment
 from app.models.scan_schedule import ScanSchedule
+from app.models.report_access import ReportShareLink, ReportAuditLog
+from app.models.risk_exception import RiskException, RiskExceptionHistory
 
-__all__ = ["Payment", "Report", "Scan", "User", "ScanSchedule", "Domain", "Workspace", "WorkspaceMember"]
+__all__ = ["Payment", "Report", "Scan", "User", "ScanSchedule", "Domain", "Workspace", "WorkspaceMember", "ReportShareLink", "ReportAuditLog", "RiskException", "RiskExceptionHistory"]

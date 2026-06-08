@@ -7,12 +7,25 @@ function getStoredToken(): string | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem('nanz-auth-storage');
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed?.state?.token || null;
-  } catch {
-    return null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.state?.token) return parsed.state.token;
+    }
+  } catch (e) {
+    // Ignore parse errors
   }
+  
+  try {
+    const rawScan = localStorage.getItem('nanz-scan-storage-v2');
+    if (rawScan) {
+      const parsed = JSON.parse(rawScan);
+      if (parsed?.state?.reportJWT) return parsed.state.reportJWT;
+    }
+  } catch (e) {
+    // Ignore parse errors
+  }
+
+  return null;
 }
 
 function authHeaders(extra?: Record<string, string>): Record<string, string> {
@@ -27,7 +40,7 @@ function authHeaders(extra?: Record<string, string>): Record<string, string> {
 export async function startScan(url: string, options?: any): Promise<ScanResponse> {
   const res = await fetch(`${API_BASE}/api/scans`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ url, options }),
   });
   if (!res.ok) throw new Error('Failed to start scan');
@@ -35,21 +48,21 @@ export async function startScan(url: string, options?: any): Promise<ScanRespons
 }
 
 export async function getScanProgress(scanId: string): Promise<ScanProgress> {
-  const res = await fetch(`${API_BASE}/api/scans/${scanId}`);
+  const res = await fetch(`${API_BASE}/api/scans/${scanId}`, { headers: authHeaders() });
   if (!res.ok) throw new Error('Failed to fetch scan progress');
   return res.json();
 }
 
 export async function getScanPreview(scanId: string): Promise<PreviewResponse> {
-  const res = await fetch(`${API_BASE}/api/scans/${scanId}/preview`);
+  const res = await fetch(`${API_BASE}/api/scans/${scanId}/preview`, { headers: authHeaders() });
   if (!res.ok) throw new Error('Failed to fetch scan preview');
   return res.json();
 }
 
 export async function createPaymentOrder(scanId: string, email: string) {
-  const res = await fetch(`${API_BASE}/api/payments/create-order`, {
+  const res = await fetch(`${API_BASE}/api/payments/create`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ scan_id: scanId, email }),
   });
   if (!res.ok) throw new Error('Failed to create payment order');
@@ -59,56 +72,68 @@ export async function createPaymentOrder(scanId: string, email: string) {
 export async function verifyPayment(data: any) {
   const res = await fetch(`${API_BASE}/api/payments/verify`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error('Payment verification failed');
   return res.json();
 }
 
-export async function getFullReport(scanId: string, token?: string): Promise<FullReport> {
+export async function getFullReport(scanId: string, token?: string | null): Promise<FullReport | any> {
   const t = token || getStoredToken();
   const res = await fetch(`${API_BASE}/api/reports/${scanId}`, {
     headers: t ? { Authorization: `Bearer ${t}` } : {},
+    cache: 'no-store',
   });
-  if (!res.ok) throw new Error('Failed to fetch full report');
+  if (res.status === 402) {
+    return res.json();
+  }
+  if (!res.ok) {
+    const err = new Error('Failed to fetch full report');
+    (err as any).response = { status: res.status };
+    throw err;
+  }
   return res.json();
 }
 
-export async function getRoadmap(scanId: string, token: string): Promise<RemediationRoadmap> {
-  const res = await fetch(`${API_BASE}/api/reports/${scanId}/roadmap`);
+export async function getRoadmap(scanId: string, token?: string | null): Promise<RemediationRoadmap> {
+  const t = token || getStoredToken();
+  const res = await fetch(`${API_BASE}/api/reports/${scanId}/roadmap`, {
+    headers: t ? { Authorization: `Bearer ${t}` } : {},
+    cache: 'no-store',
+  });
   if (!res.ok) throw new Error('Failed to fetch roadmap');
   return res.json();
 }
 
 export async function getComplianceReport(scanId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/reports/${scanId}/compliance`);
-  if (!res.ok) return null;
+  const res = await fetch(`${API_BASE}/api/reports/${scanId}/compliance`, { headers: authHeaders(), cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch compliance report');
   return res.json();
 }
 
 export async function getBrandThreats(scanId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/reports/${scanId}/brand-threats`);
-  if (!res.ok) return null;
+  const res = await fetch(`${API_BASE}/api/reports/${scanId}/brand-threats`, { headers: authHeaders(), cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch brand threats');
   return res.json();
 }
 
 export async function getEnterpriseData(scanId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/reports/${scanId}/enterprise`);
-  if (!res.ok) return null;
+  const res = await fetch(`${API_BASE}/api/reports/${scanId}/enterprise`, { headers: authHeaders(), cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch enterprise data');
   return res.json();
 }
 
 export async function getASPMScore(scanId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/reports/${scanId}/aspm`);
-  if (!res.ok) return null;
+  const res = await fetch(`${API_BASE}/api/reports/${scanId}/aspm`, { headers: authHeaders(), cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch ASPM score');
   return res.json();
 }
 
 
 export async function downloadSBOM(scanId: string, format: SBOMFormat = 'cyclonedx'): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/reports/${scanId}/sbom?format=${format}`);
-  if (!res.ok) throw new Error('SBOM generation failed');
+  const res = await fetch(`${API_BASE}/api/reports/${scanId}/sbom?format=${format}`, { headers: authHeaders(), cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to download SBOM');
   return res.json();
 }
 
@@ -119,7 +144,7 @@ export async function submitFindingFeedback(
 ): Promise<any> {
   const res = await fetch(`${API_BASE}/api/reports/${scanId}/findings/${findingId}/feedback`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ action }),
   });
   if (!res.ok) return null;
@@ -132,7 +157,7 @@ export async function ingestFindings(
 ): Promise<IngestResponse> {
   const res = await fetch(`${API_BASE}/api/ingest/${scanId}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error('Ingestion failed');

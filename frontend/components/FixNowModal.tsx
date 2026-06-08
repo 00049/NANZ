@@ -286,7 +286,7 @@ export default function FixNowModal({ finding, onClose, onMarkFixed, onFalsePosi
               <div className="flex flex-wrap gap-1.5">
                 {finding.compliance_violations.map((v, i) => (
                   <span key={i} className="text-xs px-2.5 py-1 rounded-lg bg-purple-950/50 border border-purple-800/40 text-purple-300 font-mono">
-                    {v}
+                    {typeof v === 'string' ? v : `${v?.framework || ''} ${v?.clause_id || ''}`.trim()}
                   </span>
                 ))}
               </div>

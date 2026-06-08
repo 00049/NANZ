@@ -52,6 +52,27 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.on_event("startup")
+async def configure_dns() -> None:
+    """Override system DNS with reliable public resolvers (avoids broken IPv6 nameservers)."""
+    try:
+        import dns.resolver
+        import dns.asyncresolver
+        # Configure the default sync resolver
+        dns.resolver.default_resolver = dns.resolver.Resolver(configure=False)
+        dns.resolver.default_resolver.nameservers = ['8.8.8.8', '1.1.1.1', '8.8.4.4']
+        dns.resolver.default_resolver.lifetime = 5.0
+        dns.resolver.default_resolver.timeout = 3.0
+        # Configure the default async resolver
+        dns.asyncresolver.default_resolver = dns.asyncresolver.Resolver(configure=False)
+        dns.asyncresolver.default_resolver.nameservers = ['8.8.8.8', '1.1.1.1', '8.8.4.4']
+        dns.asyncresolver.default_resolver.lifetime = 5.0
+        dns.asyncresolver.default_resolver.timeout = 3.0
+        logger.info("✅ DNS resolver configured to use public nameservers (8.8.8.8, 1.1.1.1)")
+    except Exception as e:
+        logger.warning(f"Could not configure DNS resolver: {e}")
+
+
+@app.on_event("startup")
 async def ensure_schema() -> None:
     """Ensure all required DB columns exist — idempotent, safe to run on every startup."""
     from app.db.session import engine

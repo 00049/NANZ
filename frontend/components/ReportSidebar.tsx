@@ -5,15 +5,19 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LayoutDashboard, Server, Shield, Globe, HardDrive, Key, Activity, Users, CheckSquare, List, ServerCog
+  LayoutDashboard, Server, Shield, Globe, HardDrive, Key, Activity, Users, CheckSquare, List, ServerCog,
+  ArrowLeft, ChevronLeft, ChevronRight
 } from 'lucide-react';
+import Link from 'next/link';
 
 interface ReportSidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 const SECTIONS = [
@@ -30,12 +34,15 @@ const SECTIONS = [
   { id: 'all-findings', label: 'All Findings', icon: List },
 ];
 
-export default function ReportSidebar({ isOpen, onClose }: ReportSidebarProps) {
+export default function ReportSidebar({ isOpen, onClose, isCollapsed = false, onToggleCollapse }: ReportSidebarProps) {
   const [activeSection, setActiveSection] = useState('overview');
+  const isScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout>();
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
+        if (isScrollingRef.current) return;
         const intersecting = entries.filter((entry) => entry.isIntersecting);
         if (intersecting.length > 0) {
           intersecting.sort((a, b) => b.intersectionRatio - a.intersectionRatio);
@@ -55,14 +62,37 @@ export default function ReportSidebar({ isOpen, onClose }: ReportSidebarProps) {
 
   const handleNavClick = (id: string) => {
     setActiveSection(id);
+    
+    isScrollingRef.current = true;
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      isScrollingRef.current = false;
+    }, 1000);
+    
     const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: 'smooth' });
     onClose();
   };
 
   const SidebarContent = (
-    <div className="h-full flex flex-col py-4">
-      <div className="px-4 mb-4">
+    <div className="h-full flex flex-col py-4 relative group">
+      {onToggleCollapse && (
+        <button 
+          onClick={onToggleCollapse} 
+          className="absolute -right-3 top-6 w-6 h-6 bg-[#1E1E24] border border-[#2A2A35] rounded-full hidden lg:flex items-center justify-center text-slate-400 hover:text-white z-50 opacity-0 group-hover:opacity-100 transition-opacity"
+        >
+          {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
+        </button>
+      )}
+
+      <div className="px-4 mb-6">
+        <Link href="/dashboard" className={`flex items-center gap-3 py-2.5 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 rounded-lg transition-all text-sm font-bold ${isCollapsed ? 'justify-center px-0' : 'px-3 w-full'}`}>
+          <ArrowLeft className="w-4 h-4 shrink-0" />
+          {!isCollapsed && <span>Back to Dashboard</span>}
+        </Link>
+      </div>
+
+      <div className={`px-4 mb-4 transition-all duration-200 ${isCollapsed ? 'opacity-0 h-0 overflow-hidden mb-0' : 'opacity-100'}`}>
         <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Report Navigation</h3>
       </div>
 
@@ -74,13 +104,14 @@ export default function ReportSidebar({ isOpen, onClose }: ReportSidebarProps) {
             <button
               key={section.id}
               onClick={() => handleNavClick(section.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive
+              title={isCollapsed ? section.label : undefined}
+              className={`w-full flex items-center gap-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive
                   ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                   : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 border border-transparent'
-                }`}
+                } ${isCollapsed ? 'justify-center px-0' : 'px-3'}`}
             >
               <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-blue-400' : 'text-slate-500'}`} />
-              {section.label}
+              {!isCollapsed && <span className="truncate">{section.label}</span>}
             </button>
           );
         })}
@@ -104,7 +135,7 @@ export default function ReportSidebar({ isOpen, onClose }: ReportSidebarProps) {
       </AnimatePresence>
 
       {/* Desktop Sidebar — always visible */}
-      <aside className="hidden lg:flex fixed top-16 bottom-0 left-0 w-[260px] bg-[#060608] border-r border-[#1E1E24] z-30 flex-col">
+      <aside className={`hidden lg:flex fixed top-16 bottom-0 left-0 bg-[#060608] border-r border-[#1E1E24] z-30 flex-col transition-all duration-300 ${isCollapsed ? 'w-[80px]' : 'w-[260px]'}`}>
         {SidebarContent}
       </aside>
 

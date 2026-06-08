@@ -52,7 +52,9 @@ def _extract_components(scan_results: dict[str, Any]) -> list[dict]:
     seen: set[str] = set()
 
     # ── From tech_check ────────────────────────────────────────────────────
-    tech_data = scan_results.get("tech", {}).get("data", {}) or {}
+    tech_module = scan_results.get("tech", {})
+    tech_data = tech_module.get("data") if "data" in tech_module else tech_module
+    tech_data = tech_data or {}
     for tech in tech_data.get("technologies", []):
         name = tech.get("name") or tech.get("tech_name") or ""
         if not name:
@@ -73,7 +75,9 @@ def _extract_components(scan_results: dict[str, Any]) -> list[dict]:
         })
 
     # ── From javascript_check — libraries ─────────────────────────────────
-    js_data = scan_results.get("javascript", {}).get("data", {}) or {}
+    js_module = scan_results.get("javascript", {})
+    js_data = js_module.get("data") if "data" in js_module else js_module
+    js_data = js_data or {}
     for lib in js_data.get("libraries_detected", []):
         name = lib.get("name") or lib.get("library") or ""
         if not name:
@@ -94,7 +98,9 @@ def _extract_components(scan_results: dict[str, Any]) -> list[dict]:
         })
 
     # ── From dependency_check / sca_check ─────────────────────────────────
-    dep_data = scan_results.get("dependency", {}).get("data", {}) or {}
+    dep_module = scan_results.get("dependency", {})
+    dep_data = dep_module.get("data") if "data" in dep_module else dep_module
+    dep_data = dep_data or {}
     for pkg in dep_data.get("packages", []) or dep_data.get("dependencies", []):
         name = pkg.get("name") or pkg.get("package") or ""
         if not name:
@@ -121,7 +127,9 @@ def _extract_components(scan_results: dict[str, Any]) -> list[dict]:
         })
 
     # ── From cve_intelligence ─────────────────────────────────────────────
-    cve_data = scan_results.get("cve", {}).get("data", {}) or {}
+    cve_module = scan_results.get("cve", {})
+    cve_data = cve_module.get("data") if "data" in cve_module else cve_module
+    cve_data = cve_data or {}
     for finding in cve_data.get("findings", []) or cve_data.get("cve_findings", []):
         name = finding.get("product") or finding.get("component") or finding.get("tech") or ""
         if not name:

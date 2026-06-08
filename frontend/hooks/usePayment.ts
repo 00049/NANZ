@@ -46,6 +46,9 @@ export function usePayment() {
             });
             setReportJWT(verifyRes.access_token);
             useScanStore.setState({ isPaid: true });
+            if (typeof window !== 'undefined') {
+              localStorage.setItem(`paid_scan_${scanId}`, 'true');
+            }
           } catch (err: any) {
             setError(err.message || 'Payment verification failed');
           }

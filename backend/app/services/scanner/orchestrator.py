@@ -158,7 +158,7 @@ def _json_safe(value: object) -> object:
     return value
 
 
-def _calculate_weighted_score(classified: list, raw_findings: dict, waf_result=None) -> tuple[int, dict]:
+def _calculate_weighted_score(classified: list, raw_findings: dict, waf_result=None, exceptions: dict = None) -> tuple[int, dict]:
     """
     New Dynamic Risk Scoring Formula: R = (CVSS × EM × VF) − MF
 
@@ -220,14 +220,23 @@ def _calculate_weighted_score(classified: list, raw_findings: dict, waf_result=N
         if finding.get("reachability") == "theoretical":
             em *= 0.75
 
-        r = max(0.0, (cvss * em * vf) - mf_total)
-        finding["risk_score"] = round(r, 2)  # annotate finding in-place
+        # ── Handle Accepted Risks (Exceptions) ──
+        if exceptions and key in exceptions:
+            exc = exceptions[key]
+            r = 0.0
+            finding["risk_score"] = 0.0
+            finding["exception_status"] = exc.status
+            finding["exception_justification"] = exc.justification
+            finding["exception_owner"] = exc.owner
+            finding["exception_expires_at"] = exc.expires_at.isoformat() if exc.expires_at else None
+        else:
+            r = max(0.0, (cvss * em * vf) - mf_total)
+            finding["risk_score"] = round(r, 2)  # annotate finding in-place
+            if r > 0:
+                breakdown["deductions"][key] = round(r, 2)
 
         total_risk += r
         max_possible_risk += SEVERITY_TO_CVSS.get("CRITICAL", 9.5) * 2.0 * vf
-
-        if r > 0:
-            breakdown["deductions"][key] = round(r, 2)
 
     # ── Bonus for good security practices ──
     bonus_total = 0.0
@@ -329,15 +338,31 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                 return
             await db.refresh(scan)
             # ── Idempotency guard ──
-            # If another process (e.g. Celery worker + asyncio background task)
-            # both picked up this scan, only the first one proceeds.
-            if scan.status != "pending":
+            # With Celery, we expect it to be queued or retrying.
+            # If a worker crashed mid-scan, it might be 'running' when a late ack redelivers it.
+            if scan.status not in ("queued", "retrying", "running"):
                 logger.info(f"Scan {scan_id} already in status={scan.status!r}, skipping duplicate run.")
                 return
             scan.status = "running"
             await db.commit()
             domain = scan.domain
+            domain_id = scan.domain_id
             ip_address = scan.ip_address
+            
+            # Fetch active exceptions
+            exceptions_map = {}
+            if domain_id:
+                now_dt = datetime.now(timezone.utc)
+                from app.models.risk_exception import RiskException
+                exc_result = await db.execute(
+                    select(RiskException).where(
+                        RiskException.domain_id == domain_id,
+                        (RiskException.expires_at == None) | (RiskException.expires_at > now_dt)
+                    )
+                )
+                for exc in exc_result.scalars().all():
+                    exceptions_map[exc.finding_key] = exc
+
     except SQLAlchemyError as e:
         logger.error(f"Database error preparing scan_id={scan_id}: {e}", exc_info=True)
         return
@@ -595,7 +620,7 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
             compliance_report_dict = None
 
         # ── Weighted score ──
-        overall_score, score_breakdown = _calculate_weighted_score(classified, raw_findings, waf_data)
+        overall_score, score_breakdown = _calculate_weighted_score(classified, raw_findings, waf_data, exceptions_map)
 
         # ── Phase 4: ASPM Score (enterprise-adjusted) ──
         try:
@@ -726,7 +751,16 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                             api_findings=_json_safe(enterprise_results.get("api_security", {})),
                             llm_findings=_json_safe(enterprise_results.get("llm_security", {})),
                             oast_interactions=_json_safe(enterprise_results.get("oast", {})),
-                            cve_findings=domain_reports.get("cve")
+                            cve_findings=domain_reports.get("cve"),
+                            
+                            # v2 Enterprise Fields
+                            owasp_coverage=_json_safe(aspm_data.get("owasp_coverage")) if aspm_data else None,
+                            owasp_llm_coverage=_json_safe(aspm_data.get("owasp_llm_structured")) if aspm_data else None,
+                            compliance_report_v2=_json_safe(aspm_data.get("compliance_v2")) if aspm_data else None,
+                            dpdp_penalty_crore=aspm_data.get("dpdp_penalty_crore") if aspm_data else None,
+                            ale_reduction_total=aspm_data.get("total_ale_reduction_inr") if aspm_data else None,
+                            kev_findings_count=aspm_data.get("kev_findings_count") if aspm_data else 0,
+                            severity_adjusted_count=aspm_data.get("severity_adjusted_count") if aspm_data else 0,
                         )
                         db.add(report)
 

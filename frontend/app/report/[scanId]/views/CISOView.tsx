@@ -8,6 +8,7 @@ import {
 } from '@/types';
 import { normalizeSeverity } from '@/lib/severity';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import ScoreRing from '@/components/ScoreRing';
 
 // ─── Compliance Grade helper ──────────────────────────────────────────────────
 
@@ -23,16 +24,37 @@ function scoreToGrade(score?: number): { grade: string; color: string; bg: strin
 // ─── Compliance Box ───────────────────────────────────────────────────────────
 
 function ComplianceBox({
-  label, score, status, violations, penalty,
+  label, score, status, violations, penalty, isLoading
 }: {
   label: string;
   score?: number;
   status?: string;
   violations?: string[];
   penalty?: string;
+  isLoading?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const g = scoreToGrade(score);
+
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-slate-800/50 bg-slate-900/20 p-5 animate-pulse">
+        <div className="flex items-start justify-between mb-2">
+          <div>
+            <div className="w-20 h-3 bg-slate-800 rounded mb-2"></div>
+            <div className="w-12 h-10 bg-slate-800 rounded"></div>
+          </div>
+          <div className="flex flex-col items-end">
+            <div className="w-16 h-4 bg-slate-800 rounded mb-1"></div>
+            <div className="w-24 h-3 bg-slate-800 rounded mt-1"></div>
+          </div>
+        </div>
+        <div className="flex items-center justify-end mt-2">
+          <div className="w-4 h-4 bg-slate-800 rounded"></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -104,9 +126,9 @@ function CISOFindingCard({ finding, rank }: { finding: RiskItem; rank: number })
                 24h SLA
               </span>
             )}
-            {finding.compliance_violations?.slice(0, 2).map(v => (
-              <span key={v} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-950/40 border border-purple-800/40 text-purple-400">
-                {v}
+            {finding.compliance_violations?.slice(0, 2).map((v, i) => (
+              <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-950/40 border border-purple-800/40 text-purple-400">
+                {typeof v === 'string' ? v : `${v?.framework || ''} ${v?.clause_id || ''}`.trim()}
               </span>
             ))}
           </div>
@@ -172,7 +194,17 @@ export default function CISOView({ report, aspmData, historicalScores }: CISOVie
           <Shield className="w-5 h-5 text-red-400" />
           Executive Risk Summary
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* ASPM Score */}
+          <div className="relative rounded-2xl border border-slate-800/40 bg-slate-900/30 overflow-hidden flex flex-col justify-center">
+            <div className="absolute top-4 left-0 right-0 text-center z-10 pointer-events-none">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">ASPM Security Score</span>
+            </div>
+            <div className="transform scale-[0.85] origin-center mt-6">
+              <ScoreRing score={aspmData?.aspm_score || report.overall_score} severity={aspmData?.posture_tier || report.overall_severity} />
+            </div>
+          </div>
+
           {/* Financial Exposure */}
           <div className={`rounded-2xl border p-6 ${
             totalALE >= 5_000_000 ? 'bg-red-950/20 border-red-800/40' :
@@ -272,24 +304,28 @@ export default function CISOView({ report, aspmData, historicalScores }: CISOVie
             status={cv2?.dpdp?.dpdp_risk_level || report.dpdp_risk_level}
             violations={dpdpViolations}
             penalty={dpdpPenalty > 0 ? `₹${dpdpPenalty} Crore exposure` : undefined}
+            isLoading={!aspmData && !report.compliance_report_v2}
           />
           <ComplianceBox
             label="GDPR"
             score={cv2?.gdpr?.gdpr_score}
             status={cv2?.gdpr?.gdpr_status || report.gdpr_status}
             violations={gdprViolations}
+            isLoading={!aspmData && !report.compliance_report_v2}
           />
           <ComplianceBox
             label="PCI DSS v4.0"
             score={cv2?.pci_dss?.pci_score}
             status={cv2?.pci_dss?.pci_status || report.pci_status}
             violations={pciViolations}
+            isLoading={!aspmData && !report.compliance_report_v2}
           />
           <ComplianceBox
             label="SOC 2 Type II"
             score={cv2?.soc2?.soc2_score}
             status={cv2?.soc2?.soc2_status || report.soc2_status}
             violations={soc2Violations}
+            isLoading={!aspmData && !report.compliance_report_v2}
           />
         </div>
       </section>

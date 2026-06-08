@@ -29,7 +29,7 @@ type ScanItem = {
 };
 
 const PAGE_SIZES = [10, 25, 50, 100];
-const STATUSES = ["complete", "running", "failed", "pending"];
+const STATUSES = ["complete", "running", "failed", "pending", "queued", "retrying"];
 const DATE_PRESETS = [
   { label: "Today", days: 1 },
   { label: "Last 7 days", days: 7 },

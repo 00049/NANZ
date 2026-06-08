@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Zap, Copy, CheckCircle2, Download, ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react';
 import { FullReport, ASPMReport, RiskItem, SBOMFormat, formatALE } from '@/types';
 import { downloadSBOM } from '@/lib/api';
@@ -106,9 +106,15 @@ function TechGroup({ tech, findings, onFix }: { tech: string; findings: RiskItem
 
 // ─── Developer Finding Card ───────────────────────────────────────────────────
 
-function DevFindingCard({ finding, onFix }: { finding: RiskItem; onFix: (f: RiskItem) => void }) {
+function DevFindingCard({ finding, onFix, forceExpand }: { finding: RiskItem; onFix: (f: RiskItem) => void; forceExpand?: boolean }) {
   const [open, setOpen] = useState(finding.severity === 'CRITICAL');
   const [copiedStep, setCopiedStep] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (forceExpand !== undefined) {
+      setOpen(forceExpand);
+    }
+  }, [forceExpand]);
 
   const fixSteps = finding.fix_action
     ? finding.fix_action.split(/\d+\.|•|\n/).filter(s => s.trim().length > 0)
@@ -159,6 +165,16 @@ function DevFindingCard({ finding, onFix }: { finding: RiskItem; onFix: (f: Risk
                 </button>
               </div>
             ))}
+
+            <div className="mt-4 p-3 bg-blue-950/20 border border-blue-900/30 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-blue-400 shrink-0" />
+                <span className="text-xs text-blue-200 font-medium">Need detailed code snippets or context-aware remediation?</span>
+              </div>
+              <button onClick={() => onFix(finding)} className="shrink-0 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded transition-colors flex items-center gap-1.5 justify-center">
+                <Zap className="w-3 h-3" /> Generate AI Fix
+              </button>
+            </div>
           </div>
 
           {finding.references && finding.references.length > 0 && (
@@ -319,6 +335,8 @@ interface DeveloperViewProps {
 }
 
 export default function DeveloperView({ report, aspmData, onFixClick }: DeveloperViewProps) {
+  const [forceExpandAll, setForceExpandAll] = useState<boolean>(false);
+
   const allFindings: RiskItem[] = useMemo(() => [
     ...(report.critical_risks || []),
     ...(report.high_risks || []),
@@ -379,17 +397,25 @@ export default function DeveloperView({ report, aspmData, onFixClick }: Develope
 
       {/* Section 3 — All Findings with Code Context */}
       <section>
-        <h2 className="text-xl font-black text-slate-200 mb-5">
-          All Findings — Code Context
-          <span className="ml-3 text-sm font-normal text-slate-500">({allFindings.length} total)</span>
-        </h2>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-xl font-black text-slate-200">
+            All Findings — Code Context
+            <span className="ml-3 text-sm font-normal text-slate-500">({allFindings.length} total)</span>
+          </h2>
+          <button
+            onClick={() => setForceExpandAll(prev => !prev)}
+            className="text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-800"
+          >
+            {forceExpandAll ? 'Collapse All' : 'Expand All'}
+          </button>
+        </div>
         <div className="space-y-3">
           {allFindings
             .filter(f => normalizeSeverity(f.severity) === 'CRITICAL' || normalizeSeverity(f.severity) === 'HIGH')
-            .map((f, i) => <DevFindingCard key={i} finding={f} onFix={handleFix} />)}
+            .map((f, i) => <DevFindingCard key={i} finding={f} onFix={handleFix} forceExpand={forceExpandAll} />)}
           {allFindings
             .filter(f => normalizeSeverity(f.severity) !== 'CRITICAL' && normalizeSeverity(f.severity) !== 'HIGH')
-            .map((f, i) => <DevFindingCard key={i} finding={f} onFix={handleFix} />)}
+            .map((f, i) => <DevFindingCard key={i} finding={f} onFix={handleFix} forceExpand={forceExpandAll} />)}
         </div>
       </section>
 

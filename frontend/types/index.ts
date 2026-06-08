@@ -83,9 +83,15 @@ export interface RiskItem {
   check_type?: string;
   key?: string;
   module?: string;
+  
+  // ── 5-Part Finding Structure ────────────────────────────────────────────────
+  observation?: string;
   business_impact: string;
-  technical_detail?: string;
+  evidence?: string;
   fix_action: string;
+  verification_steps?: string;
+  
+  technical_detail?: string;
   fix_difficulty?: FixDifficulty;
   estimated_fix_time?: string;
   confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
@@ -102,6 +108,12 @@ export interface RiskItem {
   contextual_severity?: Severity;
   severity_adjusted?: boolean;
   severity_reason?: string;
+  
+  // ── Exceptions ────────────────────────────────────────────────────────────
+  exception_status?: 'accepted' | 'mitigated' | 'false_positive';
+  exception_justification?: string;
+  exception_owner?: string;
+  exception_expires_at?: string;
   original_severity?: Severity;
 
   // ── RRF (Risk Reduction Factor) ───────────────────────────────────────────
@@ -120,7 +132,7 @@ export interface RiskItem {
 
   // ── OWASP / compliance mapping ────────────────────────────────────────────
   owasp_categories?: string[];
-  compliance_violations?: string[];  // ["DPDP S.8(4)", "GDPR Art. 32"]
+  compliance_violations?: any[];  // ["DPDP S.8(4)"] or [{framework, clause_id}]
 
   // ── Scanner provenance ────────────────────────────────────────────────────
   source_scanner?: string;
