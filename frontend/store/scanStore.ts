@@ -33,12 +33,9 @@ interface ScanStore {
   elapsedSeconds: number;
   preliminaryScore: number | null;
   preliminaryCounts: { critical: number; high: number; medium: number; low: number } | null;
-  estimatedDuration: number;
-  scanProgress: Record<string, 'pending' | 'running' | 'complete' | 'failed'>;
 
   // Actions
   initScan: (id: string, url: string) => void;
-  setScanId: (id: string | null) => void;
   updateProgress: (progress: Record<string, string>) => void;
   setStatus: (status: 'idle' | 'pending' | 'queued' | 'retrying' | 'running' | 'complete' | 'failed') => void;
   setPreviewData: (data: PreviewResponse) => void;

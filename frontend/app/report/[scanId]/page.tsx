@@ -351,7 +351,7 @@ export default function ReportPage({ params }: { params: { scanId: string } }) {
       }
     };
     fetchMainReport();
-  }, [params.scanId, token]);
+  }, [params.scanId, token, router]);
 
   // Fetch enterprise data only when access is confirmed
   useEffect(() => {
