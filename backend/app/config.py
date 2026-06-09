@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     ANTHROPIC_API_KEY: str | None = None
 
-    RAZORPAY_KEY_ID: str = ""
-    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_KEY_ID: str = "rzp_test_SxtgwaC82qBq7z"
+    RAZORPAY_KEY_SECRET: str = "tVfa7qR5MpUZP2jBZ0ZFfTCh"
 
     RESEND_API_KEY: str | None = None
     FROM_EMAIL: str = "reports@shieldcheck.in"
