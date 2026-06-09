@@ -6,9 +6,10 @@ from sqlalchemy import select
 
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse
-from app.schemas.auth import AuthResponse, Token
+from app.schemas.user import UserCreate, UserResponse, UserUpdate
+from app.schemas.auth import AuthResponse, Token, ChangePasswordRequest
 from app.core.security import verify_password, get_password_hash, create_access_token, get_current_user
+from app.services.email_service import send_welcome_email
 
 router = APIRouter(tags=["Authentication"])
 
@@ -33,6 +34,10 @@ async def register_user(user_in: UserCreate, db: AsyncSession = Depends(get_db))
     db.add(db_user)
     await db.commit()
     await db.refresh(db_user)
+    
+    # Send welcome email asynchronously without blocking response
+    import asyncio
+    asyncio.create_task(asyncio.to_thread(send_welcome_email, db_user.email))
     
     access_token = create_access_token(subject=db_user.id)
     return {
@@ -67,3 +72,39 @@ async def login_user(form_data: OAuth2PasswordRequestForm = Depends(), db: Async
 async def get_me(current_user: User = Depends(get_current_user)):
     """Get current user details"""
     return current_user
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(user_in: UserUpdate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Update current user details"""
+    if user_in.name is not None:
+        current_user.name = user_in.name
+    if user_in.company is not None:
+        current_user.company = user_in.company
+        
+    current_user.updated_at = datetime.utcnow()
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordRequest, 
+    current_user: User = Depends(get_current_user), 
+    db: AsyncSession = Depends(get_db)
+):
+    """Change the user's password"""
+    if not current_user.hashed_password:
+        raise HTTPException(status_code=400, detail="User has no password set (OAuth login)")
+        
+    if not verify_password(body.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Incorrect current password")
+        
+    current_user.hashed_password = get_password_hash(body.new_password)
+    current_user.updated_at = datetime.utcnow()
+    
+    db.add(current_user)
+    await db.commit()
+    
+    return {"message": "Password updated successfully"}
+

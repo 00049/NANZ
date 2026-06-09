@@ -17,3 +17,7 @@ class LoginRequest(BaseModel):
 class AuthResponse(BaseModel):
     user: UserResponse
     token: Token
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str

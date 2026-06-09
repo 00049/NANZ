@@ -27,6 +27,7 @@ async def list_scans(
 ) -> dict:
     """Return a paginated list of scans belonging to the authenticated user."""
     from app.models.scan import Scan
+    from app.models.report import Report
     from sqlalchemy import select, func
 
     total_result = await db.execute(
@@ -35,29 +36,42 @@ async def list_scans(
     total = total_result.scalar()
 
     result = await db.execute(
-        select(Scan)
+        select(Scan, Report)
+        .outerjoin(Report, Scan.id == Report.scan_id)
         .where(Scan.user_id == current_user.id)
         .order_by(Scan.created_at.desc())
         .offset(offset)
         .limit(limit)
     )
-    scans = result.scalars().all()
+    rows = result.all()
+
+    scans_out = []
+    for scan, report in rows:
+        scan_data = {
+            "id": str(scan.id),
+            "domain": scan.domain,
+            "url": scan.url,
+            "status": scan.status,
+            "scan_type": scan.scan_type,
+            "created_at": scan.created_at.isoformat() if scan.created_at else None,
+            "completed_at": scan.completed_at.isoformat() if scan.completed_at else None,
+            "scan_duration_ms": scan.scan_duration_ms,
+        }
+        if report:
+            scan_data["overall_score"] = report.overall_score
+            scan_data["overall_severity"] = report.overall_severity
+            scan_data["critical_count"] = report.critical_count
+            scan_data["high_count"] = report.high_count
+            scan_data["medium_count"] = report.medium_count
+            scan_data["low_count"] = report.low_count
+            scan_data["info_count"] = report.info_count
+            scan_data["total_findings"] = report.total_findings
+            scan_data["is_paid"] = report.is_paid
+        scans_out.append(scan_data)
 
     return {
         "total": total,
-        "scans": [
-            {
-                "id": str(s.id),
-                "domain": s.domain,
-                "url": s.url,
-                "status": s.status,
-                "scan_type": s.scan_type,
-                "created_at": s.created_at.isoformat() if s.created_at else None,
-                "completed_at": s.completed_at.isoformat() if s.completed_at else None,
-                "scan_duration_ms": s.scan_duration_ms,
-            }
-            for s in scans
-        ]
+        "scans": scans_out
     }
 
 

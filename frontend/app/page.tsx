@@ -125,34 +125,7 @@ export default function HomePage() {
     const parsed = scanUrlSchema.safeParse({ url: inputUrl });
     if (!parsed.success) { setError('Please enter a valid URL (e.g., https://example.com)'); return; }
 
-    // AUTH GATE
-    if (!token || !user) {
-      setPendingScanUrl(parsed.data.url);
-      router.push('/auth/login?redirect=scan_queue');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await startScan(parsed.data.url);
-      initScan(res.scan_id, parsed.data.url);
-
-      // Save active scan to localStorage
-      localStorage.setItem('shieldcheck_active_scan', JSON.stringify({
-        scanId: res.scan_id,
-        url: parsed.data.url,
-        startedAt: Date.now(),
-        userId: user.id
-      }));
-
-      // If the backend returned a cached completed scan, skip progress page
-      if (res.status === 'complete' || res.status === 'failed') {
-        router.push(`/report/${res.scan_id}`);
-      } else {
-        router.push(`/scan/${res.scan_id}`);
-      }
-    } catch { setError('Failed to start scan. Please try again.'); }
-    finally { setLoading(false); }
+    router.push(`/scan?url=${encodeURIComponent(parsed.data.url)}`);
   };
 
   return (
@@ -189,6 +162,7 @@ export default function HomePage() {
                   <div className="relative flex-1">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                     <input
+                      autoFocus
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleScan()}
@@ -238,9 +212,9 @@ export default function HomePage() {
       {/* ═══════════════════ SECTION 2: TRUST BAR ═══════════════════ */}
       <section className="py-14 border-y border-surface-border bg-surface/20">
         <div className="max-w-5xl mx-auto px-6 grid grid-cols-2 md:grid-cols-5 gap-8">
-          <AnimatedCounter end={29} suffix="+" label="Scan Modules" />
-          <AnimatedCounter end={50} suffix="+" label="Finding Types" />
-          <AnimatedCounter end={6} label="Compliance Frameworks" />
+          <AnimatedCounter end={28} label="Scan Modules" />
+          <AnimatedCounter end={140} suffix="+" label="Finding Types" />
+          <AnimatedCounter end={4} label="Compliance Frameworks" />
           <AnimatedCounter end={90} suffix="s" label="Avg Scan Time" />
           <AnimatedCounter end={499} prefix="₹" label="One-Time Price" />
         </div>

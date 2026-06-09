@@ -772,6 +772,27 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                         except (ConnectionError, TimeoutError, OSError, ValueError):
                             pass
 
+                        # Send report ready email asynchronously if user is attached
+                        if scan.user_id:
+                            try:
+                                from app.models.user import User
+                                user_res = await db.execute(select(User).where(User.id == scan.user_id))
+                                user = user_res.scalars().first()
+                                if user and user.email:
+                                    from app.services.email_service import send_report_ready_email
+                                    import asyncio
+                                    grade = aspm_data.get("compliance_v2", {}).get("grade", overall_severity) if aspm_data else overall_severity
+                                    asyncio.create_task(asyncio.to_thread(
+                                        send_report_ready_email,
+                                        user.email,
+                                        scan.domain,
+                                        overall_score,
+                                        grade,
+                                        str(scan.id)
+                                    ))
+                            except Exception as e:
+                                logger.error(f"Failed to trigger report ready email for scan {scan_id}: {e}")
+
                     logger.info(
                         f"Scan {scan_id} completed in {duration_ms}ms: "
                         f"status={scan.status}, findings={len(classified)}, "

@@ -1,13 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { plans, currentSubscription, invoices } from "@/lib/mock-data";
+import { plans, currentSubscription } from "@/lib/mock-data";
 import { Check, Zap, Download, CreditCard, AlertTriangle } from "lucide-react";
+import { useAuthStore } from "@/store/authStore";
 
 export default function BillingPage() {
+  const { token } = useAuthStore();
   const [annual, setAnnual] = useState(false);
+  const [invoices, setInvoices] = useState<any[]>([]);
   const currentPlan = plans.find(p => p.id === currentSubscription.planId)!;
+
+  useEffect(() => {
+    async function fetchHistory() {
+      if (!token) return;
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'}/api/payments/history`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setInvoices(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch payment history", err);
+      }
+    }
+    fetchHistory();
+  }, [token]);
 
   return (
     <div className="space-y-8">
@@ -100,13 +121,15 @@ export default function BillingPage() {
           <h3 className="text-sm font-semibold text-text-primary">Invoice History</h3>
         </div>
         <div className="divide-y divide-surface-border">
-          {invoices.map((inv) => (
-            <div key={inv.id} className="flex items-center justify-between px-5 py-4">
+          {invoices.length === 0 ? (
+            <div className="px-5 py-4 text-sm text-text-muted">No payment history found.</div>
+          ) : invoices.map((inv) => (
+            <div key={inv.order_id} className="flex items-center justify-between px-5 py-4">
               <div className="flex items-center gap-4">
                 <CreditCard className="w-4 h-4 text-text-muted" />
                 <div>
-                  <div className="text-sm text-text-primary">{new Date(inv.date).toLocaleDateString("en-US", { month: "long", year: "numeric" })}</div>
-                  <div className="text-xs text-text-muted">{inv.plan} Plan · ${inv.amount}</div>
+                  <div className="text-sm text-text-primary">{inv.created_at ? new Date(inv.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric", day: "numeric" }) : "N/A"}</div>
+                  <div className="text-xs text-text-muted">Full Report · ₹{inv.amount} · {inv.domain}</div>
                 </div>
               </div>
               <div className="flex items-center gap-3">

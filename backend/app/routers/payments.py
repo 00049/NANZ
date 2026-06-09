@@ -117,6 +117,53 @@ async def verify_payment(body: PaymentVerifyRequest, db: AsyncSession = Depends(
         report.is_paid = True
         
     await db.commit()
+    
+    # Send payment confirmation email asynchronously
+    try:
+        from app.services.email_service import send_payment_confirmation_email
+        import asyncio
+        
+        # we need domain which we can get from scan
+        scan_result = await db.execute(select(Scan).where(Scan.id == payment.scan_id))
+        scan = scan_result.scalars().first()
+        domain = scan.domain if scan else "your domain"
+        
+        asyncio.create_task(asyncio.to_thread(
+            send_payment_confirmation_email, 
+            email, 
+            domain, 
+            payment.amount_paise / 100.0, 
+            str(payment.scan_id)
+        ))
+    except Exception as e:
+        logger.error(f"Failed to trigger payment confirmation email: {e}")
 
     token = create_report_token(str(user.id), str(payment.scan_id))
     return PaymentVerifyResponse(access_token=token)
+
+from app.core.security import get_current_user
+
+@router.get("/history")
+async def get_payment_history(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Get the user's payment history."""
+    query = (
+        select(Payment, Scan.domain)
+        .join(Scan, Payment.scan_id == Scan.id)
+        .where(Payment.user_email == current_user.email, Payment.status == "paid")
+        .order_by(Payment.created_at.desc())
+    )
+    result = await db.execute(query)
+    rows = result.all()
+    
+    history = []
+    for payment, domain in rows:
+        history.append({
+            "order_id": payment.razorpay_order_id,
+            "amount": payment.amount_paise / 100.0,
+            "created_at": payment.created_at.isoformat() if payment.created_at else None,
+            "scan_id": str(payment.scan_id),
+            "status": payment.status,
+            "domain": domain
+        })
+        
+    return history

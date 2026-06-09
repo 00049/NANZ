@@ -93,3 +93,95 @@ async def send_report_email(to_email: str, report_data: dict, domain: str) -> bo
     except Exception as e:
         logger.error(f"Failed to send email to {to_email}: {e}", exc_info=True)
         return False
+
+def send_welcome_email(to_email: str):
+    """Sent on registration."""
+    if not settings.RESEND_API_KEY:
+        logger.warning(f"RESEND_API_KEY not configured. Skipping email to {to_email}")
+        return False
+        
+    subject = "Your ShieldCheck account is ready"
+    login_url = f"{settings.FRONTEND_URL}/auth/login"
+    
+    html = f"""
+    <h2>Welcome to ShieldCheck!</h2>
+    <p>Your account has been created successfully with the email: <strong>{to_email}</strong>.</p>
+    <p>You can now run enterprise-grade security scans and compliance checks in under 90 seconds.</p>
+    <p><a href="{login_url}" style="display:inline-block;padding:10px 20px;background-color:#4F46E5;color:white;text-decoration:none;border-radius:5px;">Login to your Dashboard</a></p>
+    <p>Stay secure,<br/>The ShieldCheck Team</p>
+    """
+    try:
+        resend.Emails.send({
+            "from": settings.FROM_EMAIL,
+            "to": to_email,
+            "subject": subject,
+            "html": html
+        })
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send email to {to_email}: {e}")
+        return False
+
+def send_report_ready_email(to_email: str, domain: str, score: int, grade: str, scan_id: str):
+    """Sent when scan completes."""
+    if not settings.RESEND_API_KEY:
+        logger.warning(f"RESEND_API_KEY not configured. Skipping email to {to_email}")
+        return False
+        
+    subject = f"Your security report for {domain} is ready"
+    report_url = f"{settings.FRONTEND_URL}/report/{scan_id}"
+    
+    html = f"""
+    <h2>Your scan is complete</h2>
+    <p>We've finished analyzing <strong>{domain}</strong> across 28 modules.</p>
+    <h3>Results:</h3>
+    <ul>
+        <li><strong>Security Score:</strong> {score}/100</li>
+        <li><strong>Overall Grade:</strong> {grade}</li>
+    </ul>
+    <p><a href="{report_url}" style="display:inline-block;padding:10px 20px;background-color:#4F46E5;color:white;text-decoration:none;border-radius:5px;">View Full Report</a></p>
+    <p>Thank you for using ShieldCheck.</p>
+    """
+    try:
+        resend.Emails.send({
+            "from": settings.FROM_EMAIL,
+            "to": to_email,
+            "subject": subject,
+            "html": html
+        })
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send email to {to_email}: {e}")
+        return False
+
+def send_payment_confirmation_email(to_email: str, domain: str, amount_inr: float, scan_id: str):
+    """Sent after razorpay verification."""
+    if not settings.RESEND_API_KEY:
+        logger.warning(f"RESEND_API_KEY not configured. Skipping email to {to_email}")
+        return False
+        
+    subject = f"ShieldCheck — Payment confirmed ₹{amount_inr}"
+    report_url = f"{settings.FRONTEND_URL}/report/{scan_id}"
+    
+    html = f"""
+    <h2>Payment Confirmed</h2>
+    <p>Thank you for your payment of <strong>₹{amount_inr}</strong>.</p>
+    <p>Your full security report for <strong>{domain}</strong> is now unlocked.</p>
+    <div style="background-color:#f3f4f6;padding:15px;margin:20px 0;border-radius:5px;">
+        <p><strong>Invoice Details</strong></p>
+        <p>Item: Full Security Report ({domain})</p>
+        <p>Amount Paid: ₹{amount_inr}</p>
+    </div>
+    <p><a href="{report_url}" style="display:inline-block;padding:10px 20px;background-color:#4F46E5;color:white;text-decoration:none;border-radius:5px;">Access Your Report</a></p>
+    """
+    try:
+        resend.Emails.send({
+            "from": settings.FROM_EMAIL,
+            "to": to_email,
+            "subject": subject,
+            "html": html
+        })
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send email to {to_email}: {e}")
+        return False

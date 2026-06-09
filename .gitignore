@@ -3,8 +3,19 @@ __pycache__/
 .DS_Store
 *.log
 .env
+.env.local
+.env.production
 .pytest_cache/
 venv/
+node_modules/
+.next/
+*.sqlite
+*.db
+celerybeat-schedule
+*secret*
+*key*
+*password*
+
 # Added by code-review-graph
 .code-review-graph/
 

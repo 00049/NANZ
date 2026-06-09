@@ -1,143 +1,155 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { CheckCircle2, Zap, Circle, AlertTriangle } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { CheckCircle2, Zap, Circle, AlertTriangle, Info, ShieldAlert } from 'lucide-react';
 
-const modules = [
-  { name: 'SSL Certificate Analysis', delay: 800 },
-  { name: '13 Security Headers', delay: 1400 },
-  { name: 'DNS & Email Security', delay: 2200 },
-  { name: 'DPDP Compliance Mapping', delay: 3000 },
-  { name: 'LLM/AI Security Scan', delay: 4200 },
-  { name: 'OWASP API Audit', delay: 5800 },
-  { name: 'CVE Intelligence (NVD)', delay: 7000 },
+const ALL_MODULES = [
+  'SSL/TLS Deep Analysis', 'DNS & Email Security', 'HTTP Security Headers (13)', 
+  'Port & Service Scan', 'WAF & CDN Detection', 'Web Application Security', 
+  'CORS Misconfiguration', 'HTTP Methods Audit', 'Cookie & Session Security', 
+  'JWT & OAuth Audit', 'API Security (OWASP)', 'GraphQL Security', 
+  'JavaScript Source Analysis', 'Software Composition (SCA)', 'Technology Inventory', 
+  'Crawl Intelligence', 'IAST Behavioral Analysis', 'OAST Detection', 
+  'CVE Intelligence (NVD+EPSS)', 'BOLA/IDOR Detection', 'LLM / AI Security', 
+  'Cloud Storage Exposure', 'IaC & Container Exposure', 'CMS & Plugin Security', 
+  'Brand & Reputation', 'Infrastructure & Subdomain', 'Email Security Deep Scan', 
+  'DPDP Compliance Mapping'
 ];
 
-type ModuleState = 'pending' | 'running' | 'done';
+const FAKE_FINDINGS = [
+  { severity: 'HIGH', title: 'DPDP S.8(4) Violation', desc: 'Your site transmits personal data without encryption on 3 forms.', penalty: '₹250 Crore', ale: '₹38 lakh/yr' },
+  { severity: 'MEDIUM', title: 'HSTS max-age too short', desc: 'Strict-Transport-Security max-age is under 1 year.', penalty: 'N/A', ale: '₹12 lakh/yr' },
+  { severity: 'INFO', title: 'SPF record found', desc: 'SPF mechanism is ~all, which is valid but could be stricter.', penalty: 'N/A', ale: 'N/A' },
+  { severity: 'CRITICAL', title: 'Cloud Storage Exposure', desc: 'Publicly writable bucket detected at assets-shop-example.', penalty: 'High Risk', ale: '₹1.2 Cr/yr' },
+];
 
 export default function HeroScanPreview() {
-  const [states, setStates] = useState<ModuleState[]>(modules.map(() => 'pending'));
-  const [showFinding, setShowFinding] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [visibleFindings, setVisibleFindings] = useState<any[]>([]);
 
   useEffect(() => {
-    const timers: NodeJS.Timeout[] = [];
+    const timer = setInterval(() => {
+      setCurrentIndex((prev) => {
+        const next = prev + 1;
+        if (next >= ALL_MODULES.length) {
+          // Restart loop after a short pause
+          setTimeout(() => {
+            setCurrentIndex(0);
+            setVisibleFindings([]);
+          }, 3000);
+          return prev;
+        }
+        
+        // Add findings progressively after 8 modules
+        if (next === 8) setVisibleFindings([FAKE_FINDINGS[0]]);
+        if (next === 14) setVisibleFindings([FAKE_FINDINGS[0], FAKE_FINDINGS[1]]);
+        if (next === 20) setVisibleFindings([FAKE_FINDINGS[0], FAKE_FINDINGS[1], FAKE_FINDINGS[2]]);
+        if (next === 26) setVisibleFindings(FAKE_FINDINGS);
+        
+        return next;
+      });
+    }, 1200);
 
-    modules.forEach((mod, i) => {
-      // Set to running
-      timers.push(setTimeout(() => {
-        setStates(prev => {
-          const next = [...prev];
-          next[i] = 'running';
-          return next;
-        });
-      }, mod.delay));
-
-      // Set to done
-      timers.push(setTimeout(() => {
-        setStates(prev => {
-          const next = [...prev];
-          next[i] = 'done';
-          return next;
-        });
-      }, mod.delay + 1200));
-    });
-
-    // Show finding card after a few modules complete
-    timers.push(setTimeout(() => setShowFinding(true), 3800));
-
-    // Reset cycle
-    const resetTimer = setTimeout(() => {
-      setStates(modules.map(() => 'pending'));
-      setShowFinding(false);
-    }, 10000);
-    timers.push(resetTimer);
-
-    return () => timers.forEach(clearTimeout);
+    return () => clearInterval(timer);
   }, []);
 
-  // Restart animation loop
-  useEffect(() => {
-    if (states.every(s => s === 'pending') && !showFinding) {
-      const timers: NodeJS.Timeout[] = [];
-      modules.forEach((mod, i) => {
-        timers.push(setTimeout(() => {
-          setStates(prev => { const n = [...prev]; n[i] = 'running'; return n; });
-        }, mod.delay));
-        timers.push(setTimeout(() => {
-          setStates(prev => { const n = [...prev]; n[i] = 'done'; return n; });
-        }, mod.delay + 1200));
-      });
-      timers.push(setTimeout(() => setShowFinding(true), 3800));
-      timers.push(setTimeout(() => {
-        setStates(modules.map(() => 'pending'));
-        setShowFinding(false);
-      }, 10000));
-      return () => timers.forEach(clearTimeout);
-    }
-  }, [states, showFinding]);
+  // Show last 6 modules to create a scrolling terminal effect
+  const startIdx = Math.max(0, currentIndex - 5);
+  const displayModules = ALL_MODULES.slice(startIdx, startIdx + 6);
 
   return (
-    <div className="relative w-full max-w-md">
-      {/* Scan Module Checklist */}
-      <div className="rounded-panel border border-card-border bg-card/80 backdrop-blur-sm p-5 nanz-glow-sm">
-        <div className="flex items-center gap-2 mb-4">
+    <div className="relative w-full max-w-2xl flex flex-col md:flex-row gap-4 items-start">
+      {/* Scan Module Checklist (Left side) */}
+      <div className="w-full md:w-64 flex-shrink-0 rounded-panel border border-card-border bg-card/80 backdrop-blur-sm p-4 nanz-glow-sm relative overflow-hidden">
+        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-surface-border">
           <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
           <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
             Scanning shop.example.in
           </span>
         </div>
-        <div className="space-y-2.5">
-          {modules.map((mod, i) => (
-            <div key={mod.name} className="flex items-center gap-3">
-              {states[i] === 'done' && <CheckCircle2 className="w-4 h-4 text-success flex-shrink-0" />}
-              {states[i] === 'running' && <Zap className="w-4 h-4 text-nanz-400 animate-pulse flex-shrink-0" />}
-              {states[i] === 'pending' && <Circle className="w-4 h-4 text-text-muted/40 flex-shrink-0" />}
-              <span className={`text-sm ${states[i] === 'done' ? 'text-text-secondary' : states[i] === 'running' ? 'text-text-primary font-medium' : 'text-text-muted/60'}`}>
-                {mod.name}
-              </span>
-              {states[i] === 'running' && (
-                <span className="text-[10px] text-nanz-400 font-mono ml-auto">running...</span>
-              )}
-            </div>
-          ))}
+        
+        <div className="space-y-3 min-h-[200px]">
+          {displayModules.map((modName, idx) => {
+            // Absolute index in the full list
+            const absIdx = startIdx + idx;
+            const isRunning = absIdx === currentIndex;
+            const isDone = absIdx < currentIndex;
+            
+            return (
+              <div key={modName} className="flex items-center gap-3 animate-fade-in">
+                {isDone && <CheckCircle2 className="w-4 h-4 text-success flex-shrink-0" />}
+                {isRunning && <Zap className="w-4 h-4 text-nanz-400 animate-pulse flex-shrink-0" />}
+                <span className={`text-xs truncate ${isDone ? 'text-text-secondary' : isRunning ? 'text-text-primary font-medium' : 'text-text-muted/60'}`}>
+                  {modName}
+                </span>
+                {isRunning && (
+                  <span className="text-[9px] text-nanz-400 font-mono ml-auto animate-pulse">running...</span>
+                )}
+              </div>
+            );
+          })}
         </div>
+        
         <div className="mt-4 pt-3 border-t border-surface-border">
-          <div className="flex items-center justify-between text-xs text-text-muted">
-            <span>{states.filter(s => s === 'done').length}/{modules.length} modules</span>
+          <div className="flex items-center justify-between text-xs text-text-muted mb-1.5">
+            <span>{currentIndex}/{ALL_MODULES.length} modules</span>
             <span className="text-nanz-400 font-medium">
-              {states.every(s => s === 'done') ? '29/29 complete' : 'Scanning...'}
+              {currentIndex >= ALL_MODULES.length - 1 ? 'Complete' : 'Scanning...'}
             </span>
           </div>
-          <div className="mt-2 h-1.5 rounded-full bg-surface-border overflow-hidden">
+          <div className="h-1.5 rounded-full bg-surface-border overflow-hidden">
             <div
-              className="h-full rounded-full bg-nanz-gradient transition-all duration-500 ease-out"
-              style={{ width: `${(states.filter(s => s === 'done').length / modules.length) * 100}%` }}
+              className="h-full rounded-full bg-nanz-gradient transition-all duration-300 ease-out"
+              style={{ width: `${(currentIndex / ALL_MODULES.length) * 100}%` }}
             />
           </div>
         </div>
       </div>
 
-      {/* Sample Finding Card */}
-      <div
-        className={`mt-3 rounded-card border border-high/30 bg-high/5 p-4 transition-all duration-500 ${showFinding ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
-      >
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="w-4 h-4 text-high flex-shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-high/20 text-high uppercase">HIGH</span>
-              <span className="text-xs font-semibold text-text-primary">DPDP S.8(4) Violation</span>
+      {/* Findings Container (Right side) */}
+      <div className="w-full flex-1 flex flex-col gap-3 min-h-[200px]">
+        {visibleFindings.map((finding, idx) => {
+          const isCritical = finding.severity === 'CRITICAL';
+          const isHigh = finding.severity === 'HIGH';
+          const isMedium = finding.severity === 'MEDIUM';
+          
+          return (
+            <div
+              key={idx}
+              className="animate-fade-in rounded-card border bg-card p-3.5 shadow-lg relative overflow-hidden"
+              style={{
+                borderColor: isCritical ? 'rgba(239, 68, 68, 0.3)' : isHigh ? 'rgba(249, 115, 22, 0.3)' : isMedium ? 'rgba(234, 179, 8, 0.3)' : 'rgba(59, 130, 246, 0.3)',
+                backgroundColor: isCritical ? 'rgba(239, 68, 68, 0.05)' : isHigh ? 'rgba(249, 115, 22, 0.05)' : isMedium ? 'rgba(234, 179, 8, 0.05)' : 'rgba(59, 130, 246, 0.05)'
+              }}
+            >
+              <div className="flex items-start gap-2.5">
+                {isCritical || isHigh ? <AlertTriangle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${isCritical ? 'text-critical' : 'text-high'}`} /> : 
+                 isMedium ? <ShieldAlert className="w-4 h-4 text-medium flex-shrink-0 mt-0.5" /> :
+                 <Info className="w-4 h-4 text-low flex-shrink-0 mt-0.5" />}
+                
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide
+                      ${isCritical ? 'bg-critical/20 text-critical' : isHigh ? 'bg-high/20 text-high' : isMedium ? 'bg-medium/20 text-medium' : 'bg-low/20 text-low'}`}>
+                      {finding.severity}
+                    </span>
+                    <span className="text-xs font-semibold text-text-primary truncate">{finding.title}</span>
+                  </div>
+                  <p className="text-[11px] text-text-secondary leading-relaxed mb-2">
+                    {finding.desc}
+                  </p>
+                  {(finding.penalty !== 'N/A' || finding.ale !== 'N/A') && (
+                    <div className="flex items-center gap-2 text-[9px]">
+                      {finding.penalty !== 'N/A' && <span className="text-critical font-semibold">Penalty: {finding.penalty}</span>}
+                      {finding.penalty !== 'N/A' && finding.ale !== 'N/A' && <span className="text-text-muted">•</span>}
+                      {finding.ale !== 'N/A' && <span className="text-text-muted">ALE: {finding.ale}</span>}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-text-secondary leading-relaxed">
-              Your site transmits personal data without encryption on 3 forms.
-            </p>
-            <div className="flex items-center gap-3 mt-2">
-              <span className="text-[10px] text-high font-semibold">Penalty: ₹250 Crore</span>
-              <span className="text-[10px] text-text-muted">•</span>
-              <span className="text-[10px] text-text-muted">ALE: ₹38 lakh/yr</span>
-            </div>
-          </div>
-        </div>
+          );
+        })}
       </div>
     </div>
   );
