@@ -52,7 +52,7 @@ export default function APIPage() {
           <Key className="w-6 h-6 text-nanz-400" />
         </div>
         <h2 className="text-xl font-bold text-text-primary mb-2">API access coming soon</h2>
-        <p className="text-sm text-text-secondary mb-6">We're rolling out programmatic access to the ShieldCheck scanning engine. Join the waitlist to get early access.</p>
+        <p className="text-sm text-text-secondary mb-6">We&apos;re rolling out programmatic access to the ShieldCheck scanning engine. Join the waitlist to get early access.</p>
         
         <form onSubmit={handleJoinWaitlist} className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
           <div className="relative flex-1">
