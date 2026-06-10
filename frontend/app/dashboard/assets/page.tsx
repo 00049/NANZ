@@ -140,9 +140,9 @@ export default function AssetsPage() {
                   <div className="flex items-center gap-1.5">
                     <span>{info.latestScore}</span>
                     {info.trend != null ? (
-                      info.trend > 0 ? <TrendingUp className="w-3.5 h-3.5 text-success" title={`+${info.trend} from last scan`} /> : 
-                      info.trend < 0 ? <TrendingDown className="w-3.5 h-3.5 text-critical" title={`${info.trend} from last scan`} /> : 
-                      <Minus className="w-3.5 h-3.5 text-text-muted" title="No change from last scan" />
+                      info.trend > 0 ? <span title={`+${info.trend} from last scan`}><TrendingUp className="w-3.5 h-3.5 text-success" /></span> : 
+                      info.trend < 0 ? <span title={`${info.trend} from last scan`}><TrendingDown className="w-3.5 h-3.5 text-critical" /></span> : 
+                      <span title="No change from last scan"><Minus className="w-3.5 h-3.5 text-text-muted" /></span>
                     ) : null}
                   </div>
                 ) : "—"}
