@@ -76,13 +76,17 @@ async def create_new_scan(
 
     scan_id_str = str(scan.id)
 
-    # ── PRIMARY: Dispatch via Celery ──
+    # ── PRIMARY: Dispatch via FastAPI BackgroundTasks ──
     try:
-        logger.info(f"Dispatching scan {scan_id_str} to Celery workers.")
-        run_scan.apply_async(args=[scan_id_str, url])
+        from app.services.scanner.orchestrator import run_full_scan
+        logger.info(f"Dispatching scan {scan_id_str} to background tasks.")
+        if background_tasks:
+            background_tasks.add_task(run_full_scan, scan_id_str, url, redis_client)
+        else:
+            logger.warning("No background_tasks provided, attempting asyncio.create_task")
+            asyncio.create_task(run_full_scan(scan_id_str, url, redis_client))
     except Exception as e:
-        logger.error(f"Failed to enqueue Celery task: {e}", exc_info=True)
-        # If Celery is completely down, fail immediately.
+        logger.error(f"Failed to enqueue scan task: {e}", exc_info=True)
         scan.status = "failed"
         scan.error_message = "Scan orchestration service is currently unavailable."
         db.add(scan)
