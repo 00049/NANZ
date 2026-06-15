@@ -1,13 +1,16 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
+
 
 class Settings(BaseSettings):
     """Application configuration from environment variables."""
 
     APP_ENV: str = "development"
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:localdev@localhost:5432/shieldcheck"
+    DATABASE_URL: str = (
+        "postgresql+asyncpg://postgres:localdev@localhost:5432/shieldcheck"
+    )
     REDIS_URL: str = "redis://localhost:6379"
     FRONTEND_URL: str = "http://localhost:3000"
 
@@ -25,7 +28,7 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str | None = None
     FROM_EMAIL: str = "reports@shieldcheck.in"
 
-    MAX_SCANS_PER_IP_PER_HOUR: int = 5
+    MAX_SCANS_PER_IP_PER_HOUR: int = 15
     SCAN_CACHE_HOURS: int = 6
     SENTRY_DSN: str | None = None
 
@@ -39,18 +42,16 @@ class Settings(BaseSettings):
     NUCLEI_TEMPLATES_PATH: str = "/opt/nuclei-templates"
 
     # ── Threat Intelligence cache settings (EPSS + CISA KEV) ──
-    EPSS_CACHE_TTL: int = 86400              # 24 hours in seconds
-    KEV_CATALOG_REFRESH_HOURS: int = 1       # 1 hour in seconds
+    EPSS_CACHE_TTL: int = 86400  # 24 hours in seconds
+    KEV_CATALOG_REFRESH_HOURS: int = 1  # 1 hour in seconds
 
     # ── Brand Protection APIs (optional) ──
-    INTELX_API_KEY: str | None = None        # IntelligenceX dark web search
-    GOOGLE_CSE_API_KEY: str | None = None    # Google Custom Search Engine
-    GOOGLE_CSE_CX: str | None = None         # Custom Search Engine ID
+    INTELX_API_KEY: str | None = None  # IntelligenceX dark web search
+    GOOGLE_CSE_API_KEY: str | None = None  # Google Custom Search Engine
+    GOOGLE_CSE_CX: str | None = None  # Custom Search Engine ID
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
 
