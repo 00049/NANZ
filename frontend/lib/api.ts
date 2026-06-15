@@ -43,7 +43,18 @@ export async function startScan(url: string, options?: any): Promise<ScanRespons
     headers: authHeaders(),
     body: JSON.stringify({ url, options }),
   });
-  if (!res.ok) throw new Error('Failed to start scan');
+  if (!res.ok) {
+    let errorMsg = 'Failed to start scan';
+    try {
+      const errorData = await res.json();
+      if (errorData.detail) {
+        errorMsg = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
+      } else if (errorData.error) {
+        errorMsg = errorData.error;
+      }
+    } catch (e) {}
+    throw new Error(errorMsg);
+  }
   return res.json();
 }
 
