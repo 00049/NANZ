@@ -23,7 +23,10 @@ export default function LoginPage() {
       const res = await loginUser({ email, password });
       useAuthStore.getState().setToken(res.token.access_token);
       useAuthStore.getState().setUser(res.user);
-      window.location.href = "/dashboard";
+      
+      const searchParams = new URLSearchParams(window.location.search);
+      const redirect = searchParams.get("redirect") || "/dashboard";
+      window.location.href = redirect;
     } catch (err: any) {
       let msg = err.message;
       if (msg === "Failed to fetch") {

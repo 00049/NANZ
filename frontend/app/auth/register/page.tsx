@@ -24,7 +24,10 @@ export default function RegisterPage() {
       const res = await registerUser({ name, email, password, company: "NANZ User" });
       useAuthStore.getState().setToken(res.token.access_token);
       useAuthStore.getState().setUser(res.user);
-      window.location.href = "/onboarding";
+      
+      const searchParams = new URLSearchParams(window.location.search);
+      const redirect = searchParams.get("redirect") || "/onboarding";
+      window.location.href = redirect;
     } catch (err: any) {
       let msg = err.message;
       if (msg === "Failed to fetch") {

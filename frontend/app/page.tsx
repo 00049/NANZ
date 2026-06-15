@@ -125,7 +125,13 @@ export default function HomePage() {
     const parsed = scanUrlSchema.safeParse({ url: inputUrl });
     if (!parsed.success) { setError('Please enter a valid URL (e.g., https://example.com)'); return; }
 
-    router.push(`/scan?url=${encodeURIComponent(parsed.data.url)}`);
+    const scanRoute = `/scan?url=${encodeURIComponent(parsed.data.url)}`;
+    if (!token) {
+      router.push(`/auth/login?redirect=${encodeURIComponent(scanRoute)}`);
+      return;
+    }
+
+    router.push(scanRoute);
   };
 
   return (
