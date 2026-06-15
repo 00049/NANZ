@@ -26,7 +26,7 @@ export default function RegisterPage() {
       useAuthStore.getState().setUser(res.user);
       
       const searchParams = new URLSearchParams(window.location.search);
-      const redirect = searchParams.get("redirect") || "/onboarding";
+      const redirect = searchParams.get("redirect") || "/dashboard";
       window.location.href = redirect;
     } catch (err: any) {
       let msg = err.message;
