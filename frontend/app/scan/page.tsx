@@ -7,13 +7,15 @@ import { useScanStore } from '@/store/scanStore';
 import Navbar from '@/components/Navbar';
 import { ShieldCheck } from 'lucide-react';
 
+let globalScanPromise: Promise<any> | null = null;
+let globalScanUrl: string | null = null;
+
 function ScanInitContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const url = searchParams.get('url');
   const { initScan } = useScanStore();
   const [error, setError] = useState('');
-  const initialized = useRef(false);
 
   useEffect(() => {
     if (!url) {
@@ -21,21 +23,34 @@ function ScanInitContent() {
       return;
     }
     
-    if (initialized.current) return;
-    initialized.current = true;
+    let isMounted = true;
 
     async function init() {
       try {
-        const res = await startScan(url as string);
+        if (globalScanUrl !== url || !globalScanPromise) {
+          globalScanUrl = url as string;
+          globalScanPromise = startScan(url as string);
+        }
+        
+        const res = await globalScanPromise;
+        if (!isMounted) return;
+        
         initScan(res.scan_id, url as string);
         router.replace(`/scan/${res.scan_id}`);
       } catch (err: any) {
+        if (!isMounted) return;
+        
+        globalScanPromise = null;
         console.error('Failed to start scan:', err);
         setError(err.message || 'Failed to start scan. Please try again.');
       }
     }
     
     init();
+    
+    return () => {
+      isMounted = false;
+    };
   }, [url, router, initScan]);
 
   if (error) {
