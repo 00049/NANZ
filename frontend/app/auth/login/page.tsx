@@ -126,7 +126,7 @@ export default function LoginPage() {
 
       <p className="text-sm text-text-secondary text-center">
         Don&apos;t have an account?{" "}
-        <Link href="/auth/register" className="text-nanz-400 hover:text-nanz-300 font-medium transition-colors">Create account</Link>
+        <a href="/auth/register" onClick={(e) => { e.preventDefault(); window.location.href = `/auth/register${window.location.search}`; }} className="text-nanz-400 hover:text-nanz-300 font-medium transition-colors cursor-pointer">Create account</a>
       </p>
     </div>
   );
