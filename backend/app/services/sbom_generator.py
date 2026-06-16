@@ -16,22 +16,22 @@ Usage:
 """
 
 import hashlib
-import json
 import logging
 import uuid
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Optional
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-class SBOMFormat(str, Enum):
+class SBOMFormat(StrEnum):
     CYCLONEDX = "cyclonedx"
     SPDX = "spdx"
 
 
 # ── Data Extraction Helpers ───────────────────────────────────────────────────
+
 
 def _extract_components(scan_results: dict[str, Any]) -> list[dict]:
     """
@@ -64,15 +64,17 @@ def _extract_components(scan_results: dict[str, Any]) -> list[dict]:
         if dedup_key in seen:
             continue
         seen.add(dedup_key)
-        components.append({
-            "name": name,
-            "version": version,
-            "type": _infer_type(name),
-            "purl": _build_purl(name, version, tech.get("category", "")),
-            "cpe": tech.get("cpe") or None,
-            "cves": [],
-            "source": "tech_check",
-        })
+        components.append(
+            {
+                "name": name,
+                "version": version,
+                "type": _infer_type(name),
+                "purl": _build_purl(name, version, tech.get("category", "")),
+                "cpe": tech.get("cpe") or None,
+                "cves": [],
+                "source": "tech_check",
+            }
+        )
 
     # ── From javascript_check — libraries ─────────────────────────────────
     js_module = scan_results.get("javascript", {})
@@ -87,15 +89,17 @@ def _extract_components(scan_results: dict[str, Any]) -> list[dict]:
         if dedup_key in seen:
             continue
         seen.add(dedup_key)
-        components.append({
-            "name": name,
-            "version": version,
-            "type": "library",
-            "purl": _build_purl(name, version, "npm"),
-            "cpe": None,
-            "cves": lib.get("cves", []),
-            "source": "javascript_check",
-        })
+        components.append(
+            {
+                "name": name,
+                "version": version,
+                "type": "library",
+                "purl": _build_purl(name, version, "npm"),
+                "cpe": None,
+                "cves": lib.get("cves", []),
+                "source": "javascript_check",
+            }
+        )
 
     # ── From dependency_check / sca_check ─────────────────────────────────
     dep_module = scan_results.get("dependency", {})
@@ -116,22 +120,29 @@ def _extract_components(scan_results: dict[str, Any]) -> list[dict]:
             v.get("cve_id") or v.get("id") or v if isinstance(v, str) else ""
             for v in cves_raw
         ]
-        components.append({
-            "name": name,
-            "version": version,
-            "type": "library",
-            "purl": _build_purl(name, version, ecosystem),
-            "cpe": pkg.get("cpe") or None,
-            "cves": [c for c in cve_ids if c],
-            "source": "dependency_check",
-        })
+        components.append(
+            {
+                "name": name,
+                "version": version,
+                "type": "library",
+                "purl": _build_purl(name, version, ecosystem),
+                "cpe": pkg.get("cpe") or None,
+                "cves": [c for c in cve_ids if c],
+                "source": "dependency_check",
+            }
+        )
 
     # ── From cve_intelligence ─────────────────────────────────────────────
     cve_module = scan_results.get("cve", {})
     cve_data = cve_module.get("data") if "data" in cve_module else cve_module
     cve_data = cve_data or {}
     for finding in cve_data.get("findings", []) or cve_data.get("cve_findings", []):
-        name = finding.get("product") or finding.get("component") or finding.get("tech") or ""
+        name = (
+            finding.get("product")
+            or finding.get("component")
+            or finding.get("tech")
+            or ""
+        )
         if not name:
             continue
         version = finding.get("version") or None
@@ -140,15 +151,17 @@ def _extract_components(scan_results: dict[str, Any]) -> list[dict]:
             continue
         seen.add(dedup_key)
         cve_id = finding.get("cve_id") or finding.get("id") or ""
-        components.append({
-            "name": name,
-            "version": version,
-            "type": _infer_type(name),
-            "purl": _build_purl(name, version, ""),
-            "cpe": finding.get("cpe") or None,
-            "cves": [cve_id] if cve_id else [],
-            "source": "cve_intelligence",
-        })
+        components.append(
+            {
+                "name": name,
+                "version": version,
+                "type": _infer_type(name),
+                "purl": _build_purl(name, version, ""),
+                "cpe": finding.get("cpe") or None,
+                "cves": [cve_id] if cve_id else [],
+                "source": "cve_intelligence",
+            }
+        )
 
     return components
 
@@ -157,8 +170,18 @@ def _infer_type(name: str) -> str:
     """Infer CycloneDX component type from component name."""
     name_lower = name.lower()
     frameworks = {
-        "wordpress", "django", "rails", "laravel", "spring", "express",
-        "next.js", "nextjs", "react", "angular", "vue", "nuxt",
+        "wordpress",
+        "django",
+        "rails",
+        "laravel",
+        "spring",
+        "express",
+        "next.js",
+        "nextjs",
+        "react",
+        "angular",
+        "vue",
+        "nuxt",
     }
     runtimes = {"node", "node.js", "python", "php", "java", "ruby", "golang"}
     web_servers = {"nginx", "apache", "iis", "caddy", "traefik", "lighttpd"}
@@ -172,7 +195,7 @@ def _infer_type(name: str) -> str:
     return "library"
 
 
-def _build_purl(name: str, version: Optional[str], ecosystem: str) -> Optional[str]:
+def _build_purl(name: str, version: str | None, ecosystem: str) -> str | None:
     """Build a Package URL (purl) for a software component."""
     if not name:
         return None
@@ -182,7 +205,9 @@ def _build_purl(name: str, version: Optional[str], ecosystem: str) -> Optional[s
 
     # Infer ecosystem from name patterns
     if not eco_lower:
-        if any(c in name.lower() for c in ["jquery", "react", "vue", "angular", "express"]):
+        if any(
+            c in name.lower() for c in ["jquery", "react", "vue", "angular", "express"]
+        ):
             eco_lower = "npm"
         elif any(c in name.lower() for c in ["django", "flask", "requests", "boto"]):
             eco_lower = "pypi"
@@ -198,7 +223,11 @@ def _build_purl(name: str, version: Optional[str], ecosystem: str) -> Optional[s
     elif eco_lower in ("pip", "pypi", "python"):
         eco_lower = "pypi"
     elif eco_lower == "maven":
-        return f"pkg:maven/{name_clean}/{version}" if version else f"pkg:maven/{name_clean}"
+        return (
+            f"pkg:maven/{name_clean}/{version}"
+            if version
+            else f"pkg:maven/{name_clean}"
+        )
     elif eco_lower == "packagist":
         return f"pkg:packagist/{name_clean}" + (f"@{version}" if version else "")
 
@@ -210,11 +239,14 @@ def _build_purl(name: str, version: Optional[str], ecosystem: str) -> Optional[s
 
 # ── CycloneDX 1.4 Generator ───────────────────────────────────────────────────
 
+
 def _component_to_cyclonedx(comp: dict, bom_ref_prefix: str) -> dict:
     """Convert a component dict to a CycloneDX 1.4 component object."""
     name = comp["name"]
     version_str = comp.get("version") or ""
-    bom_ref = f"{bom_ref_prefix}-{hashlib.md5((name + version_str).encode()).hexdigest()[:8]}"
+    bom_ref = (
+        f"{bom_ref_prefix}-{hashlib.md5((name + version_str).encode()).hexdigest()[:8]}"
+    )
 
     cdx_comp: dict = {
         "type": comp.get("type", "library"),
@@ -235,11 +267,13 @@ def _component_to_cyclonedx(comp: dict, bom_ref_prefix: str) -> dict:
     if comp.get("cves"):
         cdx_comp["externalReferences"] = []
         for cve_id in comp["cves"]:
-            cdx_comp["externalReferences"].append({
-                "type": "advisories",
-                "url": f"https://nvd.nist.gov/vuln/detail/{cve_id}",
-                "comment": f"Known vulnerability: {cve_id}",
-            })
+            cdx_comp["externalReferences"].append(
+                {
+                    "type": "advisories",
+                    "url": f"https://nvd.nist.gov/vuln/detail/{cve_id}",
+                    "comment": f"Known vulnerability: {cve_id}",
+                }
+            )
 
     return cdx_comp
 
@@ -247,7 +281,7 @@ def _component_to_cyclonedx(comp: dict, bom_ref_prefix: str) -> dict:
 def generate_cyclonedx_sbom(
     scan_results: dict[str, Any],
     domain: str,
-    scan_id: Optional[str] = None,
+    scan_id: str | None = None,
 ) -> dict:
     """
     Generate a CycloneDX 1.4 SBOM JSON object.
@@ -261,15 +295,12 @@ def generate_cyclonedx_sbom(
         Complete CycloneDX 1.4 BOM as a Python dict (JSON-serializable)
     """
     serial = str(uuid.uuid4())
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     bom_prefix = domain.replace(".", "-").replace("_", "-")[:16]
 
     components = _extract_components(scan_results)
 
-    cdx_components = [
-        _component_to_cyclonedx(c, bom_prefix)
-        for c in components
-    ]
+    cdx_components = [_component_to_cyclonedx(c, bom_prefix) for c in components]
 
     # Collect all CVE vulnerabilities
     vulnerabilities = []
@@ -329,10 +360,11 @@ def generate_cyclonedx_sbom(
 
 # ── SPDX 2.3 Generator ────────────────────────────────────────────────────────
 
+
 def generate_spdx_sbom(
     scan_results: dict[str, Any],
     domain: str,
-    scan_id: Optional[str] = None,
+    scan_id: str | None = None,
 ) -> dict:
     """
     Generate an SPDX 2.3 SBOM JSON object.
@@ -345,7 +377,7 @@ def generate_spdx_sbom(
     Returns:
         SPDX 2.3 JSON document as Python dict
     """
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     doc_id = scan_id or str(uuid.uuid4())
     domain_clean = domain.replace(".", "-")
 
@@ -372,19 +404,23 @@ def generate_spdx_sbom(
             ]
         if comp.get("cpe"):
             refs = package.setdefault("externalRefs", [])
-            refs.append({
-                "referenceCategory": "SECURITY",
-                "referenceType": "cpe23Type",
-                "referenceLocator": comp["cpe"],
-            })
+            refs.append(
+                {
+                    "referenceCategory": "SECURITY",
+                    "referenceType": "cpe23Type",
+                    "referenceLocator": comp["cpe"],
+                }
+            )
         if comp.get("cves"):
             refs = package.setdefault("externalRefs", [])
             for cve_id in comp["cves"]:
-                refs.append({
-                    "referenceCategory": "SECURITY",
-                    "referenceType": "advisory",
-                    "referenceLocator": f"https://nvd.nist.gov/vuln/detail/{cve_id}",
-                })
+                refs.append(
+                    {
+                        "referenceCategory": "SECURITY",
+                        "referenceType": "advisory",
+                        "referenceLocator": f"https://nvd.nist.gov/vuln/detail/{cve_id}",
+                    }
+                )
         packages.append(package)
 
     spdx_doc = {
@@ -417,11 +453,12 @@ def generate_spdx_sbom(
 
 # ── Main Entrypoint ────────────────────────────────────────────────────────────
 
+
 def generate_sbom(
     scan_results: dict[str, Any],
     domain: str,
     format: SBOMFormat = SBOMFormat.CYCLONEDX,
-    scan_id: Optional[str] = None,
+    scan_id: str | None = None,
 ) -> dict:
     """
     Generate an SBOM in the requested format.

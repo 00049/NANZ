@@ -19,7 +19,6 @@ Usage:
 import hashlib
 import logging
 import re
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +75,13 @@ def _merge_findings(primary: dict, duplicate: dict) -> dict:
         merged["severity"] = duplicate["severity"]
 
     # confirmed_by: merge source scanners
-    primary_sources = primary.get("confirmed_by", [primary.get("source_scanner", primary.get("module", "shieldcheck"))])
-    dup_source = duplicate.get("source_scanner") or duplicate.get("module") or "shieldcheck"
+    primary_sources = primary.get(
+        "confirmed_by",
+        [primary.get("source_scanner", primary.get("module", "shieldcheck"))],
+    )
+    dup_source = (
+        duplicate.get("source_scanner") or duplicate.get("module") or "shieldcheck"
+    )
     if isinstance(primary_sources, str):
         primary_sources = [primary_sources]
     confirmed_by = list(set(primary_sources + [dup_source]))
@@ -92,10 +96,14 @@ def _merge_findings(primary: dict, duplicate: dict) -> dict:
     merged["duplicate_count"] = primary.get("duplicate_count", 1) + 1
 
     # Prefer the more detailed description
-    if len(str(duplicate.get("technical_detail", ""))) > len(str(primary.get("technical_detail", ""))):
+    if len(str(duplicate.get("technical_detail", ""))) > len(
+        str(primary.get("technical_detail", ""))
+    ):
         merged["technical_detail"] = duplicate.get("technical_detail")
 
-    if len(str(duplicate.get("fix_action", ""))) > len(str(primary.get("fix_action", ""))):
+    if len(str(duplicate.get("fix_action", ""))) > len(
+        str(primary.get("fix_action", ""))
+    ):
         merged["fix_action"] = duplicate.get("fix_action")
 
     return merged
@@ -157,7 +165,7 @@ def deduplicate_findings(
             merge_summary[source]["new"] += 1
 
     # Reconstruct merged findings: existing (possibly updated) + new
-    existing_fps = {_finding_fingerprint(f) for f in existing_findings}
+    {_finding_fingerprint(f) for f in existing_findings}
     merged_findings = []
 
     # Existing findings (with merged data)

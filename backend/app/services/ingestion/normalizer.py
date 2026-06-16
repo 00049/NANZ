@@ -19,18 +19,18 @@ Usage:
 
 import logging
 import re
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # ── Severity Mapping Tables ───────────────────────────────────────────────────
 
 _SARIF_LEVEL_TO_SEVERITY: dict[str, str] = {
-    "error":   "RED",
+    "error": "RED",
     "warning": "AMBER",
-    "note":    "GREEN",
-    "none":    "INFO",
+    "note": "GREEN",
+    "none": "INFO",
 }
 
 _CVSS_TO_SEVERITY: dict[str, str] = {
@@ -39,27 +39,27 @@ _CVSS_TO_SEVERITY: dict[str, str] = {
 
 _SNYK_SEVERITY: dict[str, str] = {
     "critical": "CRITICAL",
-    "high":     "RED",
-    "medium":   "AMBER",
-    "low":      "GREEN",
+    "high": "RED",
+    "medium": "AMBER",
+    "low": "GREEN",
 }
 
 _TRIVY_SEVERITY: dict[str, str] = {
     "CRITICAL": "CRITICAL",
-    "HIGH":     "RED",
-    "MEDIUM":   "AMBER",
-    "LOW":      "GREEN",
-    "UNKNOWN":  "INFO",
+    "HIGH": "RED",
+    "MEDIUM": "AMBER",
+    "LOW": "GREEN",
+    "UNKNOWN": "INFO",
 }
 
 _SEMGREP_SEVERITY: dict[str, str] = {
-    "ERROR":   "RED",
+    "ERROR": "RED",
     "WARNING": "AMBER",
-    "INFO":    "GREEN",
+    "INFO": "GREEN",
 }
 
 
-def _cvss_to_severity(score: Optional[float]) -> str:
+def _cvss_to_severity(score: float | None) -> str:
     """Map a CVSS score to internal severity."""
     if score is None:
         return "AMBER"
@@ -74,29 +74,30 @@ def _cvss_to_severity(score: Optional[float]) -> str:
     return "INFO"
 
 
-class Format(str, Enum):
-    SARIF    = "sarif"
-    SNYK     = "snyk"
-    TRIVY    = "trivy"
-    SEMGREP  = "semgrep"
-    GENERIC  = "generic"
+class Format(StrEnum):
+    SARIF = "sarif"
+    SNYK = "snyk"
+    TRIVY = "trivy"
+    SEMGREP = "semgrep"
+    GENERIC = "generic"
 
 
 # ── Normalized Finding Template ───────────────────────────────────────────────
+
 
 def _base_finding(
     key: str,
     title: str,
     severity: str,
     description: str,
-    cve_id: Optional[str] = None,
-    cvss_score: Optional[float] = None,
-    affected_file: Optional[str] = None,
-    affected_line: Optional[int] = None,
-    remediation: Optional[str] = None,
-    references: Optional[list[str]] = None,
+    cve_id: str | None = None,
+    cvss_score: float | None = None,
+    affected_file: str | None = None,
+    affected_line: int | None = None,
+    remediation: str | None = None,
+    references: list[str] | None = None,
     source: str = "external",
-    raw: Optional[dict] = None,
+    raw: dict | None = None,
 ) -> dict:
     """Build a normalized finding dict compatible with ShieldCheck RiskItem."""
     return {
@@ -109,7 +110,8 @@ def _base_finding(
         "title": title,
         "business_impact": f"A security issue was detected by {source}: {title}",
         "technical_detail": description or title,
-        "fix_action": remediation or "Review the finding and apply the recommended fix.",
+        "fix_action": remediation
+        or "Review the finding and apply the recommended fix.",
         "fix_difficulty": "Medium",
         "estimated_fix_time": "30 minutes",
         "references": references or [],
@@ -125,6 +127,7 @@ def _base_finding(
 
 # ── SARIF 2.1.0 Parser ────────────────────────────────────────────────────────
 
+
 def _normalize_sarif(data: dict, source: str = "sarif") -> list[dict]:
     """
     Parse SARIF 2.1.0 results into normalized findings.
@@ -135,21 +138,19 @@ def _normalize_sarif(data: dict, source: str = "sarif") -> list[dict]:
     runs = data.get("runs", [])
 
     for run in runs:
-        tool_name = (
-            run.get("tool", {}).get("driver", {}).get("name", source)
-        )
+        tool_name = run.get("tool", {}).get("driver", {}).get("name", source)
         rules_by_id: dict[str, dict] = {}
         for rule in run.get("tool", {}).get("driver", {}).get("rules", []):
             rules_by_id[rule["id"]] = rule
 
         for result in run.get("results", []):
-            rule_id   = result.get("ruleId", "unknown_rule")
-            level     = result.get("level", "warning")
-            severity  = _SARIF_LEVEL_TO_SEVERITY.get(level, "AMBER")
+            rule_id = result.get("ruleId", "unknown_rule")
+            level = result.get("level", "warning")
+            severity = _SARIF_LEVEL_TO_SEVERITY.get(level, "AMBER")
 
             # Title from rule or message
-            rule      = rules_by_id.get(rule_id, {})
-            title     = (
+            rule = rules_by_id.get(rule_id, {})
+            title = (
                 rule.get("name")
                 or rule.get("shortDescription", {}).get("text")
                 or rule_id
@@ -173,7 +174,8 @@ def _normalize_sarif(data: dict, source: str = "sarif") -> list[dict]:
             # References
             refs = [
                 r.get("uri", "")
-                for r in rule.get("helpUri", [{"uri": ""}]) if isinstance(r, dict)
+                for r in rule.get("helpUri", [{"uri": ""}])
+                if isinstance(r, dict)
             ]
             help_uri = rule.get("helpUri")
             if isinstance(help_uri, str):
@@ -189,24 +191,27 @@ def _normalize_sarif(data: dict, source: str = "sarif") -> list[dict]:
 
             key = f"sarif_{tool_name.lower().replace(' ', '_')}_{rule_id[:40]}"
 
-            normalized.append(_base_finding(
-                key=key,
-                title=title,
-                severity=severity,
-                description=desc,
-                cve_id=cve_id,
-                affected_file=affected_file,
-                affected_line=affected_line,
-                references=refs,
-                source=tool_name,
-                raw=result,
-            ))
+            normalized.append(
+                _base_finding(
+                    key=key,
+                    title=title,
+                    severity=severity,
+                    description=desc,
+                    cve_id=cve_id,
+                    affected_file=affected_file,
+                    affected_line=affected_line,
+                    references=refs,
+                    source=tool_name,
+                    raw=result,
+                )
+            )
 
     logger.info(f"SARIF: normalized {len(normalized)} findings from {source}")
     return normalized
 
 
 # ── Snyk JSON Parser ──────────────────────────────────────────────────────────
+
 
 def _normalize_snyk(data: dict, source: str = "snyk") -> list[dict]:
     """
@@ -220,7 +225,7 @@ def _normalize_snyk(data: dict, source: str = "snyk") -> list[dict]:
 
     for project_result in results_list:
         vulnerabilities = project_result.get("vulnerabilities", [])
-        project_name = project_result.get("projectName", "unknown")
+        project_result.get("projectName", "unknown")
 
         for vuln in vulnerabilities:
             cve_ids = vuln.get("identifiers", {}).get("CVE", [])
@@ -236,40 +241,52 @@ def _normalize_snyk(data: dict, source: str = "snyk") -> list[dict]:
             severity_raw = vuln.get("severity", "medium")
             severity = _SNYK_SEVERITY.get(severity_raw.lower(), "AMBER")
 
-            title     = vuln.get("title") or vuln.get("name") or "Unknown Vulnerability"
-            desc      = vuln.get("description") or title
+            title = vuln.get("title") or vuln.get("name") or "Unknown Vulnerability"
+            desc = vuln.get("description") or title
             module_name = vuln.get("moduleName") or vuln.get("packageName") or ""
-            fix        = vuln.get("fixedIn", [])
+            fix = vuln.get("fixedIn", [])
             remediation = (
-                f"Upgrade {module_name} to {fix[0]}" if fix else
-                (vuln.get("remediation") or vuln.get("description") or "Apply vendor patch")
+                f"Upgrade {module_name} to {fix[0]}"
+                if fix
+                else (
+                    vuln.get("remediation")
+                    or vuln.get("description")
+                    or "Apply vendor patch"
+                )
             )
 
-            refs = [r.get("url", "") for r in vuln.get("references", []) if isinstance(r, dict)]
+            refs = [
+                r.get("url", "")
+                for r in vuln.get("references", [])
+                if isinstance(r, dict)
+            ]
             if cve_id:
                 refs.append(f"https://nvd.nist.gov/vuln/detail/{cve_id}")
 
             key = f"snyk_{(cve_id or vuln.get('id', 'unknown')).lower().replace('-', '_')[:50]}"
 
-            normalized.append(_base_finding(
-                key=key,
-                title=title,
-                severity=severity,
-                description=desc,
-                cve_id=cve_id,
-                cvss_score=cvss_score,
-                affected_file=module_name,
-                remediation=remediation,
-                references=[r for r in refs if r],
-                source=source,
-                raw=vuln,
-            ))
+            normalized.append(
+                _base_finding(
+                    key=key,
+                    title=title,
+                    severity=severity,
+                    description=desc,
+                    cve_id=cve_id,
+                    cvss_score=cvss_score,
+                    affected_file=module_name,
+                    remediation=remediation,
+                    references=[r for r in refs if r],
+                    source=source,
+                    raw=vuln,
+                )
+            )
 
     logger.info(f"Snyk: normalized {len(normalized)} findings")
     return normalized
 
 
 # ── Trivy JSON Parser ─────────────────────────────────────────────────────────
+
 
 def _normalize_trivy(data: dict, source: str = "trivy") -> list[dict]:
     """
@@ -284,11 +301,11 @@ def _normalize_trivy(data: dict, source: str = "trivy") -> list[dict]:
 
         # Vulnerabilities
         for vuln in result.get("Vulnerabilities", []) or []:
-            cve_id    = vuln.get("VulnerabilityID")
-            title     = vuln.get("Title") or vuln.get("PkgName") or cve_id or "Unknown"
-            desc      = vuln.get("Description") or title
-            sev_raw   = vuln.get("Severity", "UNKNOWN")
-            severity  = _TRIVY_SEVERITY.get(sev_raw.upper(), "AMBER")
+            cve_id = vuln.get("VulnerabilityID")
+            title = vuln.get("Title") or vuln.get("PkgName") or cve_id or "Unknown"
+            desc = vuln.get("Description") or title
+            sev_raw = vuln.get("Severity", "UNKNOWN")
+            severity = _TRIVY_SEVERITY.get(sev_raw.upper(), "AMBER")
 
             # CVSS
             cvss_score = None
@@ -304,46 +321,54 @@ def _normalize_trivy(data: dict, source: str = "trivy") -> list[dict]:
             fixed_version = vuln.get("FixedVersion")
             pkg_name = vuln.get("PkgName", "")
             remediation = (
-                f"Upgrade {pkg_name} to version {fixed_version}" if fixed_version
+                f"Upgrade {pkg_name} to version {fixed_version}"
+                if fixed_version
                 else f"Update {pkg_name} to the latest version"
             )
             refs = vuln.get("References", [])[:5]
 
             key = f"trivy_vuln_{(cve_id or 'unknown').lower().replace('-', '_')[:50]}"
-            normalized.append(_base_finding(
-                key=key,
-                title=title,
-                severity=severity,
-                description=desc,
-                cve_id=cve_id,
-                cvss_score=cvss_score,
-                affected_file=target or pkg_name,
-                remediation=remediation,
-                references=refs,
-                source=source,
-                raw=vuln,
-            ))
+            normalized.append(
+                _base_finding(
+                    key=key,
+                    title=title,
+                    severity=severity,
+                    description=desc,
+                    cve_id=cve_id,
+                    cvss_score=cvss_score,
+                    affected_file=target or pkg_name,
+                    remediation=remediation,
+                    references=refs,
+                    source=source,
+                    raw=vuln,
+                )
+            )
 
         # Misconfigurations
         for misc in result.get("Misconfigurations", []) or []:
-            sev_raw  = misc.get("Severity", "UNKNOWN")
+            sev_raw = misc.get("Severity", "UNKNOWN")
             severity = _TRIVY_SEVERITY.get(sev_raw.upper(), "AMBER")
-            title    = misc.get("Title") or misc.get("Type") or "Misconfiguration"
-            desc     = misc.get("Description") or misc.get("Message") or title
-            refs     = [misc.get("PrimaryURL")] if misc.get("PrimaryURL") else []
-            key      = f"trivy_misc_{misc.get('ID', 'unknown').lower().replace('-', '_')[:50]}"
+            title = misc.get("Title") or misc.get("Type") or "Misconfiguration"
+            desc = misc.get("Description") or misc.get("Message") or title
+            refs = [misc.get("PrimaryURL")] if misc.get("PrimaryURL") else []
+            key = (
+                f"trivy_misc_{misc.get('ID', 'unknown').lower().replace('-', '_')[:50]}"
+            )
 
-            normalized.append(_base_finding(
-                key=key,
-                title=title,
-                severity=severity,
-                description=desc,
-                affected_file=target,
-                references=[r for r in refs if r],
-                remediation=misc.get("Resolution") or "Apply recommended security configuration.",
-                source=source,
-                raw=misc,
-            ))
+            normalized.append(
+                _base_finding(
+                    key=key,
+                    title=title,
+                    severity=severity,
+                    description=desc,
+                    affected_file=target,
+                    references=[r for r in refs if r],
+                    remediation=misc.get("Resolution")
+                    or "Apply recommended security configuration.",
+                    source=source,
+                    raw=misc,
+                )
+            )
 
     logger.info(f"Trivy: normalized {len(normalized)} findings")
     return normalized
@@ -351,25 +376,30 @@ def _normalize_trivy(data: dict, source: str = "trivy") -> list[dict]:
 
 # ── Semgrep JSON Parser ───────────────────────────────────────────────────────
 
+
 def _normalize_semgrep(data: dict, source: str = "semgrep") -> list[dict]:
     """Parse Semgrep JSON output (semgrep --json)."""
     normalized: list[dict] = []
     results = data.get("results", [])
 
     for result in results:
-        rule_id   = result.get("check_id", "unknown")
-        message   = result.get("extra", {}).get("message", "")
-        metadata  = result.get("extra", {}).get("metadata", {})
-        sev_raw   = result.get("extra", {}).get("severity", "WARNING")
-        severity  = _SEMGREP_SEVERITY.get(sev_raw.upper(), "AMBER")
+        rule_id = result.get("check_id", "unknown")
+        message = result.get("extra", {}).get("message", "")
+        metadata = result.get("extra", {}).get("metadata", {})
+        sev_raw = result.get("extra", {}).get("severity", "WARNING")
+        severity = _SEMGREP_SEVERITY.get(sev_raw.upper(), "AMBER")
 
-        title     = metadata.get("cwe", [rule_id])[0] if isinstance(metadata.get("cwe"), list) else rule_id
-        refs      = metadata.get("references", [])
+        title = (
+            metadata.get("cwe", [rule_id])[0]
+            if isinstance(metadata.get("cwe"), list)
+            else rule_id
+        )
+        refs = metadata.get("references", [])
         if isinstance(refs, str):
             refs = [refs]
 
-        cwe_list  = metadata.get("cwe", [])
-        cve_id    = None
+        cwe_list = metadata.get("cwe", [])
+        cve_id = None
         if isinstance(cwe_list, list):
             for cwe in cwe_list:
                 if isinstance(cwe, str) and "CVE-" in cwe:
@@ -378,30 +408,33 @@ def _normalize_semgrep(data: dict, source: str = "semgrep") -> list[dict]:
                         cve_id = match.group(0)
                         break
 
-        path  = result.get("path", "")
+        path = result.get("path", "")
         start = result.get("start", {})
-        line  = start.get("line")
-        key   = f"semgrep_{rule_id[:60].lower().replace('/', '_').replace('.', '_')}"
+        line = start.get("line")
+        key = f"semgrep_{rule_id[:60].lower().replace('/', '_').replace('.', '_')}"
 
-        normalized.append(_base_finding(
-            key=key,
-            title=title,
-            severity=severity,
-            description=message,
-            cve_id=cve_id,
-            affected_file=path,
-            affected_line=line,
-            references=[r for r in refs if r],
-            remediation=metadata.get("fix", metadata.get("message", "")),
-            source=source,
-            raw=result,
-        ))
+        normalized.append(
+            _base_finding(
+                key=key,
+                title=title,
+                severity=severity,
+                description=message,
+                cve_id=cve_id,
+                affected_file=path,
+                affected_line=line,
+                references=[r for r in refs if r],
+                remediation=metadata.get("fix", metadata.get("message", "")),
+                source=source,
+                raw=result,
+            )
+        )
 
     logger.info(f"Semgrep: normalized {len(normalized)} findings")
     return normalized
 
 
 # ── Generic Format Parser ─────────────────────────────────────────────────────
+
 
 def _normalize_generic(data: Any, source: str = "generic") -> list[dict]:
     """
@@ -418,31 +451,39 @@ def _normalize_generic(data: Any, source: str = "generic") -> list[dict]:
     for item in data:
         if not isinstance(item, dict):
             continue
-        key      = item.get("key") or item.get("check_type") or "generic_finding"
+        key = item.get("key") or item.get("check_type") or "generic_finding"
         severity = item.get("severity", "AMBER")
-        detail   = item.get("detail") or item.get("description") or item.get("title") or "Security Finding"
-        title    = item.get("title") or detail[:80]
+        detail = (
+            item.get("detail")
+            or item.get("description")
+            or item.get("title")
+            or "Security Finding"
+        )
+        title = item.get("title") or detail[:80]
 
-        normalized.append(_base_finding(
-            key=key,
-            title=title,
-            severity=severity,
-            description=detail,
-            cve_id=item.get("cve_id"),
-            cvss_score=item.get("cvss_score"),
-            affected_file=item.get("affected_file") or item.get("url"),
-            affected_line=item.get("affected_line"),
-            remediation=item.get("fix_action") or item.get("remediation"),
-            references=item.get("references", []),
-            source=source,
-            raw=item,
-        ))
+        normalized.append(
+            _base_finding(
+                key=key,
+                title=title,
+                severity=severity,
+                description=detail,
+                cve_id=item.get("cve_id"),
+                cvss_score=item.get("cvss_score"),
+                affected_file=item.get("affected_file") or item.get("url"),
+                affected_line=item.get("affected_line"),
+                remediation=item.get("fix_action") or item.get("remediation"),
+                references=item.get("references", []),
+                source=source,
+                raw=item,
+            )
+        )
 
     logger.info(f"Generic: normalized {len(normalized)} findings")
     return normalized
 
 
 # ── Main Entrypoint ───────────────────────────────────────────────────────────
+
 
 def normalize_findings(
     raw_data: Any,

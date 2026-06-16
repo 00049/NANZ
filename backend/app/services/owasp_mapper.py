@@ -32,9 +32,13 @@ OWASP_TOP10_2021: dict[str, dict] = {
         "id": "A01:2021",
         "name": "Broken Access Control",
         "finding_keys": {
-            "api_bola", "bola_confirmed", "bola_vulnerable_endpoints",
-            "idor_confirmed", "forced_browsing_sensitive",
-            "auth_bypass_api", "auth_bypass_endpoints",
+            "api_bola",
+            "bola_confirmed",
+            "bola_vulnerable_endpoints",
+            "idor_confirmed",
+            "forced_browsing_sensitive",
+            "auth_bypass_api",
+            "auth_bypass_endpoints",
             "cms_admin_no_auth",
         },
         "modules": {"api_security_check", "business_logic_check", "api_security"},
@@ -45,18 +49,31 @@ OWASP_TOP10_2021: dict[str, dict] = {
         "id": "A02:2021",
         "name": "Cryptographic Failures",
         "finding_keys": {
-            "ssl_invalid", "ssl_unavailable", "ssl_self_signed",
-            "ssl_tls10_supported", "ssl_tls11_supported",
-            "ssl_null_cipher", "ssl_rc4_cipher", "ssl_des_cipher",
-            "ssl_export_cipher", "ssl_heartbleed",
-            "ssl_expiring_critical", "ssl_expiring_soon",
-            "sensitive_data_in_jwt", "jwt_none_algorithm",
+            "ssl_invalid",
+            "ssl_unavailable",
+            "ssl_self_signed",
+            "ssl_tls10_supported",
+            "ssl_tls11_supported",
+            "ssl_null_cipher",
+            "ssl_rc4_cipher",
+            "ssl_des_cipher",
+            "ssl_export_cipher",
+            "ssl_heartbleed",
+            "ssl_expiring_critical",
+            "ssl_expiring_soon",
+            "sensitive_data_in_jwt",
+            "jwt_none_algorithm",
             "session_cookie_insecure",
             "headers_no_https_redirect",
             "weak_cipher_detected",
             "mixed_content_detected",
         },
-        "modules": {"ssl_check", "cookie_check", "headers_check", "auth_protocol_check"},
+        "modules": {
+            "ssl_check",
+            "cookie_check",
+            "headers_check",
+            "auth_protocol_check",
+        },
         "status_logic": "full",
         "notes": None,
     },
@@ -64,10 +81,14 @@ OWASP_TOP10_2021: dict[str, dict] = {
         "id": "A03:2021",
         "name": "Injection",
         "finding_keys": {
-            "iast_stack_trace", "iast_db_error",
-            "oast_ssrf_confirmed", "oast_log4j_surface",
-            "graphql_introspection_enabled", "error_verbosity_db",
-            "webapp_sql_injection", "db_errors_found",
+            "iast_stack_trace",
+            "iast_db_error",
+            "oast_ssrf_confirmed",
+            "oast_log4j_surface",
+            "graphql_introspection_enabled",
+            "error_verbosity_db",
+            "webapp_sql_injection",
+            "db_errors_found",
         },
         "modules": {"iast_behavioral", "oast_check", "graphql_check"},
         "status_logic": "partial",
@@ -81,8 +102,10 @@ OWASP_TOP10_2021: dict[str, dict] = {
         "id": "A04:2021",
         "name": "Insecure Design",
         "finding_keys": {
-            "price_manipulation_surface", "workflow_bypass",
-            "account_enumeration_confirmed", "transaction_replay_surface",
+            "price_manipulation_surface",
+            "workflow_bypass",
+            "account_enumeration_confirmed",
+            "transaction_replay_surface",
             "race_condition_surface",
             "cors_credentials_wildcard",
             "graphql_no_depth_limit",
@@ -96,27 +119,40 @@ OWASP_TOP10_2021: dict[str, dict] = {
         "name": "Security Misconfiguration",
         "finding_keys": {
             # Headers
-            "headers_many_missing", "headers_some_missing",
-            "headers_server_version_exposed", "headers_tech_stack_exposed",
+            "headers_many_missing",
+            "headers_some_missing",
+            "headers_server_version_exposed",
+            "headers_tech_stack_exposed",
             "headers_no_https_redirect",
             # Webapp
-            "webapp_exposed_.env", "webapp_exposed_.git_config",
-            "debug_endpoints_exposed", "swagger_ui_exposed",
+            "webapp_exposed_.env",
+            "webapp_exposed_.git_config",
+            "debug_endpoints_exposed",
+            "swagger_ui_exposed",
             # Ports
-            "dangerous_ports_exposed", "unusual_ports_open",
+            "dangerous_ports_exposed",
+            "unusual_ports_open",
             # DNS
             "dns_zone_transfer",
             # CMS
-            "cms_admin_login_visible", "cms_install_files_exposed",
+            "cms_admin_login_visible",
+            "cms_install_files_exposed",
             # GraphQL
-            "graphql_introspection_enabled", "graphql_playground_exposed",
+            "graphql_introspection_enabled",
+            "graphql_playground_exposed",
             # HTTP Methods
-            "trace_enabled", "trace_with_reflection",
+            "trace_enabled",
+            "trace_with_reflection",
             "dangerous_methods_enabled",
         },
         "modules": {
-            "headers_check", "webapp_check", "port_check",
-            "dns_check", "cms_check", "graphql_check", "http_methods_check",
+            "headers_check",
+            "webapp_check",
+            "port_check",
+            "dns_check",
+            "cms_check",
+            "graphql_check",
+            "http_methods_check",
         },
         "status_logic": "full",
         "notes": None,
@@ -125,13 +161,24 @@ OWASP_TOP10_2021: dict[str, dict] = {
         "id": "A06:2021",
         "name": "Vulnerable and Outdated Components",
         "finding_keys": {
-            "cms_wp_vulnerable_plugins", "cms_wp_core_vulnerable",
-            "cms_outdated", "jquery_outdated", "js_library_outdated",
-            "vulnerable_libraries", "dependency_confusion_risk",
-            "sri_hash_mismatch", "sri_missing",
-            "malicious_package_detected", "typosquat_dependency",
+            "cms_wp_vulnerable_plugins",
+            "cms_wp_core_vulnerable",
+            "cms_outdated",
+            "jquery_outdated",
+            "js_library_outdated",
+            "vulnerable_libraries",
+            "dependency_confusion_risk",
+            "sri_hash_mismatch",
+            "sri_missing",
+            "malicious_package_detected",
+            "typosquat_dependency",
         },
-        "modules": {"dependency_check", "javascript_check", "cms_check", "cve_intelligence"},
+        "modules": {
+            "dependency_check",
+            "javascript_check",
+            "cms_check",
+            "cve_intelligence",
+        },
         "status_logic": "full",
         "notes": None,
     },
@@ -139,8 +186,10 @@ OWASP_TOP10_2021: dict[str, dict] = {
         "id": "A07:2021",
         "name": "Identification and Authentication Failures",
         "finding_keys": {
-            "auth_bypass_api", "auth_bypass_endpoints",
-            "jwt_no_expiry", "jwt_none_algorithm",
+            "auth_bypass_api",
+            "auth_bypass_endpoints",
+            "jwt_no_expiry",
+            "jwt_none_algorithm",
             "sensitive_data_in_jwt",
             "missing_rate_limiting",
             "account_enumeration_confirmed",
@@ -149,8 +198,12 @@ OWASP_TOP10_2021: dict[str, dict] = {
             "cms_default_credentials",
         },
         "modules": {
-            "api_security_check", "auth_protocol_check",
-            "cookie_check", "breach_check", "cms_check", "business_logic_check",
+            "api_security_check",
+            "auth_protocol_check",
+            "cookie_check",
+            "breach_check",
+            "cms_check",
+            "business_logic_check",
         },
         "status_logic": "full",
         "notes": None,
@@ -159,8 +212,10 @@ OWASP_TOP10_2021: dict[str, dict] = {
         "id": "A08:2021",
         "name": "Software and Data Integrity Failures",
         "finding_keys": {
-            "sri_hash_mismatch", "sri_missing",
-            "malicious_package_detected", "typosquat_dependency",
+            "sri_hash_mismatch",
+            "sri_missing",
+            "malicious_package_detected",
+            "typosquat_dependency",
             "dependency_confusion_risk",
             "source_map_exposed",
             "terraform_state_exposed",
@@ -174,8 +229,10 @@ OWASP_TOP10_2021: dict[str, dict] = {
         "id": "A09:2021",
         "name": "Security Logging and Monitoring Failures",
         "finding_keys": {
-            "iast_stack_trace", "iast_db_error",
-            "error_verbosity_score", "debug_code_in_production",
+            "iast_stack_trace",
+            "iast_db_error",
+            "error_verbosity_score",
+            "debug_code_in_production",
             "debug_endpoints_exposed",
             "server_status_exposed",
         },
@@ -190,11 +247,18 @@ OWASP_TOP10_2021: dict[str, dict] = {
         "id": "A10:2021",
         "name": "Server-Side Request Forgery (SSRF)",
         "finding_keys": {
-            "oast_ssrf_confirmed", "ssrf_confirmed",
-            "api7_ssrf_indicators", "graphql_ssrf",
+            "oast_ssrf_confirmed",
+            "ssrf_confirmed",
+            "api7_ssrf_indicators",
+            "graphql_ssrf",
             "metadata_ssrf_indicator",
         },
-        "modules": {"oast_check", "api_security_check", "graphql_check", "container_security_check"},
+        "modules": {
+            "oast_check",
+            "api_security_check",
+            "graphql_check",
+            "container_security_check",
+        },
         "status_logic": "full",
         "notes": None,
     },
@@ -263,7 +327,9 @@ def compute_owasp_top10_coverage(
     for k, v in enterprise_results.items():
         if v and not (isinstance(v, dict) and v.get("error")):
             all_modules_run.add(k)
-            all_modules_run.add(f"{k}_check") # Also add the suffixed version just in case
+            all_modules_run.add(
+                f"{k}_check"
+            )  # Also add the suffixed version just in case
 
     categories: dict[str, dict] = {}
     tested_count = 0
@@ -273,7 +339,8 @@ def compute_owasp_top10_coverage(
     for cat_id, cat_def in OWASP_TOP10_2021.items():
         # Find matching findings
         cat_findings = [
-            f for f in all_findings
+            f
+            for f in all_findings
             if (f.get("key") or f.get("check_type") or "") in cat_def["finding_keys"]
         ]
 
@@ -302,11 +369,14 @@ def compute_owasp_top10_coverage(
             "name": cat_def["name"],
             "status": status,
             "findings_count": len(cat_findings),
-            "highest_severity": _get_worst_severity(cat_findings) if cat_findings else "INFO",
+            "highest_severity": (
+                _get_worst_severity(cat_findings) if cat_findings else "INFO"
+            ),
             "findings": [
-                f.get("key") or f.get("check_type") or ""
-                for f in cat_findings
-            ][:20],  # Cap at 20 finding IDs per category
+                f.get("key") or f.get("check_type") or "" for f in cat_findings
+            ][
+                :20
+            ],  # Cap at 20 finding IDs per category
             "modules_tested": modules_tested,
             "notes": cat_def.get("notes"),
         }

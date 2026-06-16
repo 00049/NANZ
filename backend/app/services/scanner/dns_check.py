@@ -12,31 +12,58 @@ import asyncio
 import json
 import logging
 import socket
-import ssl as ssl_module
 from dataclasses import dataclass, field
-from typing import Optional
 
 import dns.asyncresolver
-import dns.resolver
-import dns.rdatatype
-import dns.zone
-import dns.query
 import dns.name
+import dns.query
+import dns.rdatatype
+import dns.resolver
+import dns.zone
 
-from app.utils.subprocess_runner import run_safe_subprocess, is_tool_available
+from app.utils.subprocess_runner import is_tool_available, run_safe_subprocess
 
 logger = logging.getLogger(__name__)
 
 # Common subdomains to check (passive enumeration)
 COMMON_SUBDOMAINS = [
-    "admin", "api", "mail", "ftp", "dev", "staging",
-    "test", "beta", "portal", "vpn", "remote", "backup",
-    "old", "blog", "shop", "store", "app", "dashboard",
-    "cdn", "static", "media", "img", "docs", "wiki",
+    "admin",
+    "api",
+    "mail",
+    "ftp",
+    "dev",
+    "staging",
+    "test",
+    "beta",
+    "portal",
+    "vpn",
+    "remote",
+    "backup",
+    "old",
+    "blog",
+    "shop",
+    "store",
+    "app",
+    "dashboard",
+    "cdn",
+    "static",
+    "media",
+    "img",
+    "docs",
+    "wiki",
 ]
 
 # DKIM selectors to check
-DKIM_SELECTORS = ["default", "google", "mail", "selector1", "selector2", "dkim", "s1", "s2"]
+DKIM_SELECTORS = [
+    "default",
+    "google",
+    "mail",
+    "selector1",
+    "selector2",
+    "dkim",
+    "s1",
+    "s2",
+]
 
 
 @dataclass
@@ -45,15 +72,15 @@ class DNSResult:
 
     # SPF
     has_spf: bool = False
-    spf_record: Optional[str] = None
-    spf_all_mechanism: Optional[str] = None  # ~all, -all, +all, ?all
-    spf_lookup_count: Optional[int] = None
+    spf_record: str | None = None
+    spf_all_mechanism: str | None = None  # ~all, -all, +all, ?all
+    spf_lookup_count: int | None = None
     spf_too_many_lookups: bool = False
 
     # DMARC
     has_dmarc: bool = False
-    dmarc_record: Optional[str] = None
-    dmarc_policy: Optional[str] = None  # none, quarantine, reject
+    dmarc_record: str | None = None
+    dmarc_policy: str | None = None  # none, quarantine, reject
     dmarc_not_enforced: bool = False
 
     # DKIM
@@ -87,14 +114,14 @@ class DNSResult:
 
     # New v2 fields
     has_bimi: bool = False
-    bimi_record: Optional[str] = None
+    bimi_record: str | None = None
     has_mta_sts: bool = False
-    mta_sts_policy: Optional[str] = None
+    mta_sts_policy: str | None = None
     smtp_no_starttls: bool = False
-    dmarc: Optional[dict] = None  # {policy: str, ...} for classifier
+    dmarc: dict | None = None  # {policy: str, ...} for classifier
 
     # Error
-    error: Optional[str] = None
+    error: str | None = None
 
 
 async def _query_txt(domain: str) -> list[str]:
@@ -126,7 +153,16 @@ async def _check_spf(domain: str, result: DNSResult) -> None:
                     break
 
             # Count DNS lookups (include, a, mx, ptr, exists, redirect)
-            lookup_keywords = ["include:", "a:", "a/", "mx:", "mx/", "ptr:", "exists:", "redirect="]
+            lookup_keywords = [
+                "include:",
+                "a:",
+                "a/",
+                "mx:",
+                "mx/",
+                "ptr:",
+                "exists:",
+                "redirect=",
+            ]
             count = sum(1 for kw in lookup_keywords if kw in spf.lower())
             # "a" and "mx" without colon also count
             parts = spf.lower().split()
@@ -212,10 +248,12 @@ async def _check_mx(domain: str, result: DNSResult) -> None:
     try:
         answers = await dns.asyncresolver.resolve(domain, "MX")
         for rdata in answers:
-            result.mx_records.append({
-                "priority": rdata.preference,
-                "host": str(rdata.exchange).rstrip("."),
-            })
+            result.mx_records.append(
+                {
+                    "priority": rdata.preference,
+                    "host": str(rdata.exchange).rstrip("."),
+                }
+            )
         result.mx_records.sort(key=lambda x: x["priority"])
         result.has_mx = len(result.mx_records) > 0
     except (dns.resolver.DNSException, TimeoutError, OSError):
@@ -224,7 +262,8 @@ async def _check_mx(domain: str, result: DNSResult) -> None:
 
 async def _check_subdomains(domain: str, result: DNSResult) -> None:
     """Passively check common subdomains via DNS resolution."""
-    async def _check_one(sub: str) -> Optional[str]:
+
+    async def _check_one(sub: str) -> str | None:
         fqdn = f"{sub}.{domain}"
         try:
             await dns.asyncresolver.resolve(fqdn, "A")
@@ -256,7 +295,9 @@ async def _check_zone_transfer(domain: str, result: DNSResult) -> None:
                 )
                 if zone:
                     result.zone_transfer_possible = True
-                    logger.warning(f"Zone transfer SUCCESSFUL for {domain} via {ns_host}")
+                    logger.warning(
+                        f"Zone transfer SUCCESSFUL for {domain} via {ns_host}"
+                    )
                     return
             except Exception:
                 continue
@@ -270,7 +311,15 @@ async def _check_typosquatting(domain: str, result: DNSResult) -> None:
         # Try Python module
         try:
             proc_result = await run_safe_subprocess(
-                ["python", "-m", "dnstwist", "--registered", "--format", "json", domain],
+                [
+                    "python",
+                    "-m",
+                    "dnstwist",
+                    "--registered",
+                    "--format",
+                    "json",
+                    domain,
+                ],
                 timeout=30.0,
                 tool_name="dnstwist",
             )
@@ -328,7 +377,10 @@ async def _check_mta_sts(domain: str, result: DNSResult) -> None:
     """Check for MTA-STS (Mail Transfer Agent Strict Transport Security)."""
     try:
         import httpx
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, verify=False) as client:
+
+        async with httpx.AsyncClient(
+            timeout=8.0, follow_redirects=True, verify=False
+        ) as client:
             url = f"https://mta-sts.{domain}/.well-known/mta-sts.txt"
             res = await client.get(url)
             if res.status_code == 200 and "mode:" in res.text.lower():
@@ -355,7 +407,7 @@ async def _check_smtp_tls(domain: str, result: DNSResult) -> None:
         def _test_starttls(host: str) -> bool:
             try:
                 sock = socket.create_connection((host, 25), timeout=8)
-                banner = sock.recv(1024).decode("utf-8", errors="replace")
+                sock.recv(1024).decode("utf-8", errors="replace")
                 sock.sendall(b"EHLO shieldcheck.in\r\n")
                 ehlo_resp = sock.recv(4096).decode("utf-8", errors="replace")
                 has_starttls = "starttls" in ehlo_resp.lower()
@@ -397,7 +449,7 @@ async def run(domain: str) -> DNSResult:
         # Phase 2: SMTP TLS (needs MX results)
         try:
             await asyncio.wait_for(_check_smtp_tls(domain, result), timeout=10.0)
-        except (asyncio.TimeoutError, Exception):
+        except (TimeoutError, Exception):
             pass
 
         # Build dmarc dict for classifier

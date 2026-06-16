@@ -226,8 +226,7 @@ def compute_owasp_llm_coverage(
     for f in all_findings:
         key = f.get("key") or f.get("check_type") or ""
         if key.startswith("llm_") or any(
-            key in cat_def["finding_keys"]
-            for cat_def in OWASP_LLM_2025.values()
+            key in cat_def["finding_keys"] for cat_def in OWASP_LLM_2025.values()
         ):
             llm_finding_keys.add(key)
             llm_findings_by_key.setdefault(key, []).append(f)
@@ -290,8 +289,7 @@ def compute_owasp_llm_coverage(
             "findings_count": len(cat_findings_list),
             "highest_severity": worst_sev if cat_findings_list else "INFO",
             "findings": [
-                f.get("key") or f.get("check_id") or ""
-                for f in cat_findings_list
+                f.get("key") or f.get("check_id") or "" for f in cat_findings_list
             ][:10],
             "notes": cat_def.get("notes"),
         }

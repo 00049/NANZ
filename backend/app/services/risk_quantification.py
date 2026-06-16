@@ -30,8 +30,7 @@ Usage:
 """
 
 import logging
-from dataclasses import dataclass, field
-from typing import Optional, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +38,10 @@ logger = logging.getLogger(__name__)
 
 HEURISTIC_EXPLOIT_PROBABILITY: dict[str, float] = {
     "CRITICAL": 0.75,
-    "RED":      0.45,
-    "AMBER":    0.20,
-    "GREEN":    0.05,
-    "INFO":     0.01,
+    "RED": 0.45,
+    "AMBER": 0.20,
+    "GREEN": 0.05,
+    "INFO": 0.01,
 }
 
 RESIDUAL_RISK_AFTER_FIX = 0.02  # 2% residual risk assumed after remediation
@@ -51,48 +50,49 @@ RESIDUAL_RISK_AFTER_FIX = 0.02  # 2% residual risk assumed after remediation
 
 # Determined by URL patterns, endpoint types, and detected technologies
 ASSET_CRITICALITY: dict[str, float] = {
-    "payment_page":         3.0,
-    "login_auth_endpoint":  2.5,
-    "admin_panel":          2.5,
-    "api_pii_endpoint":     2.0,
-    "public_web_page":      1.5,
-    "static_assets":        0.5,
-    "unknown":              1.0,
+    "payment_page": 3.0,
+    "login_auth_endpoint": 2.5,
+    "admin_panel": 2.5,
+    "api_pii_endpoint": 2.0,
+    "public_web_page": 1.5,
+    "static_assets": 0.5,
+    "unknown": 1.0,
 }
 
 # ── Single Loss Expectancy (SLE) by Data Type Detected — in INR ───────────────
 
 SLE_BY_DATA_TYPE: dict[str, int] = {
-    "pii":           4_500_000,   # Rs. 45,00,000 — DPDP max fine scaled
-    "payment_pci":   8_500_000,   # Rs. 85,00,000 — PCI scope breach
-    "healthcare":    3_500_000,   # Rs. 35,00,000 — health data
-    "auth_creds":    2_500_000,   # Rs. 25,00,000 — credential exposure
-    "business_data": 1_200_000,   # Rs. 12,00,000 — general business
-    "no_sensitive":    300_000,   # Rs.  3,00,000 — minimal exposure
+    "pii": 4_500_000,  # Rs. 45,00,000 — DPDP max fine scaled
+    "payment_pci": 8_500_000,  # Rs. 85,00,000 — PCI scope breach
+    "healthcare": 3_500_000,  # Rs. 35,00,000 — health data
+    "auth_creds": 2_500_000,  # Rs. 25,00,000 — credential exposure
+    "business_data": 1_200_000,  # Rs. 12,00,000 — general business
+    "no_sensitive": 300_000,  # Rs.  3,00,000 — minimal exposure
 }
 
 # ── Annual Rate of Occurrence (ARO) by Severity ───────────────────────────────
 
 ARO_BY_SEVERITY: dict[str, float] = {
     "CRITICAL": 0.85,
-    "RED":      0.45,
-    "AMBER":    0.15,
-    "GREEN":    0.03,
-    "INFO":     0.01,
+    "RED": 0.45,
+    "AMBER": 0.15,
+    "GREEN": 0.03,
+    "INFO": 0.01,
 }
 
 # ── SLA Tiers ────────────────────────────────────────────────────────────────
 
 SLA_BY_SEVERITY: dict[str, tuple[str, str]] = {
-    "CRITICAL": ("24 hours",  "P0"),
-    "RED":      ("7 days",    "P1"),
-    "AMBER":    ("30 days",   "P2"),
-    "GREEN":    ("90 days",   "P3"),
-    "INFO":     ("Best effort", "P4"),
+    "CRITICAL": ("24 hours", "P0"),
+    "RED": ("7 days", "P1"),
+    "AMBER": ("30 days", "P2"),
+    "GREEN": ("90 days", "P3"),
+    "INFO": ("Best effort", "P4"),
 }
 
 
 # ── Data Context Detector ─────────────────────────────────────────────────────
+
 
 def detect_data_context(scan_data: dict[str, Any]) -> str:
     """
@@ -115,7 +115,9 @@ def detect_data_context(scan_data: dict[str, Any]) -> str:
     if (
         any(sig in tech_names for sig in pci_signals)
         or any(sig in js_libs for sig in pci_signals)
-        or any(sig in crawled_paths for sig in ["/checkout", "/payment", "/pay", "/cart"])
+        or any(
+            sig in crawled_paths for sig in ["/checkout", "/payment", "/pay", "/cart"]
+        )
         or any(sig in js_secrets.lower() for sig in ["stripe", "razorpay", "square"])
     ):
         return "payment_pci"
@@ -211,9 +213,10 @@ def detect_asset_criticality(
 
 # ── Core Metric Calculators ───────────────────────────────────────────────────
 
+
 def compute_rrf(
     severity: str,
-    epss_score: Optional[float],
+    epss_score: float | None,
     asset_criticality_key: str,
 ) -> dict:
     """
@@ -259,7 +262,7 @@ def compute_rrf(
 def compute_ale_reduction(
     severity: str,
     data_context: str,
-    epss_score: Optional[float] = None,
+    epss_score: float | None = None,
 ) -> dict:
     """
     Compute Annual Loss Expectancy (ALE) reduction in INR.
@@ -313,17 +316,15 @@ def compute_sla(severity: str) -> dict:
     Returns:
         {"sla_deadline": "24 hours", "sla_tier": "P0"}
     """
-    sla_deadline, sla_tier = SLA_BY_SEVERITY.get(
-        severity, SLA_BY_SEVERITY["INFO"]
-    )
+    sla_deadline, sla_tier = SLA_BY_SEVERITY.get(severity, SLA_BY_SEVERITY["INFO"])
     return {"sla_deadline": sla_deadline, "sla_tier": sla_tier}
 
 
 def compute_contextual_severity(
     original_severity: str,
-    epss_score: Optional[float],
+    epss_score: float | None,
     in_kev: bool,
-    cve_id: Optional[str] = None,
+    cve_id: str | None = None,
 ) -> dict:
     """
     Apply EPSS + KEV-based severity override rules.
@@ -354,7 +355,7 @@ def compute_contextual_severity(
     # Rule 1: CISA KEV — always CRITICAL regardless of CVSS
     if in_kev:
         adjusted = "CRITICAL"
-        reason = f"Upgraded: CISA KEV — actively exploited in the wild"
+        reason = "Upgraded: CISA KEV — actively exploited in the wild"
         badge = "🚨 CISA KEV"
         return {
             "contextual_severity": adjusted,
@@ -404,8 +405,8 @@ def compute_contextual_severity(
 def enrich_finding_with_risk_metrics(
     finding: dict[str, Any],
     scan_data: dict[str, Any],
-    epss_score: Optional[float] = None,
-    epss_percentile: Optional[int] = None,
+    epss_score: float | None = None,
+    epss_percentile: int | None = None,
     in_kev: bool = False,
 ) -> dict[str, Any]:
     """
@@ -429,7 +430,11 @@ def enrich_finding_with_risk_metrics(
         enriched finding dict
     """
     severity = finding.get("severity", "AMBER")
-    cve_id = finding.get("cve_id") or finding.get("data", {}).get("cve_id") if isinstance(finding.get("data"), dict) else None
+    cve_id = (
+        finding.get("cve_id") or finding.get("data", {}).get("cve_id")
+        if isinstance(finding.get("data"), dict)
+        else None
+    )
 
     # Detect context
     asset_criticality_key = detect_asset_criticality(finding, scan_data)
@@ -442,32 +447,30 @@ def enrich_finding_with_risk_metrics(
     ctx_data = compute_contextual_severity(severity, epss_score, in_kev, cve_id)
 
     # Attach to finding
-    finding.update({
-        # RRF
-        "rrf_score": rrf_data["rrf_score"],
-        "rrf_label": rrf_data["rrf_label"],
-        "rrf_display": rrf_data["rrf_display"],
-
-        # ALE
-        "ale_reduction_inr": ale_data["ale_reduction_inr"],
-        "ale_display": ale_data["ale_display"],
-        "ale_data": ale_data,
-
-        # SLA
-        "sla_deadline": sla_data["sla_deadline"],
-        "sla_tier": sla_data["sla_tier"],
-
-        # EPSS + KEV
-        "epss_score": epss_score,
-        "epss_percentile": epss_percentile,
-        "cisa_kev": in_kev,
-
-        # Contextual severity
-        "contextual_severity": ctx_data["contextual_severity"],
-        "severity_adjusted": ctx_data["severity_adjusted"],
-        "severity_reason": ctx_data["severity_reason"],
-        "epss_badge": ctx_data["epss_badge"],
-    })
+    finding.update(
+        {
+            # RRF
+            "rrf_score": rrf_data["rrf_score"],
+            "rrf_label": rrf_data["rrf_label"],
+            "rrf_display": rrf_data["rrf_display"],
+            # ALE
+            "ale_reduction_inr": ale_data["ale_reduction_inr"],
+            "ale_display": ale_data["ale_display"],
+            "ale_data": ale_data,
+            # SLA
+            "sla_deadline": sla_data["sla_deadline"],
+            "sla_tier": sla_data["sla_tier"],
+            # EPSS + KEV
+            "epss_score": epss_score,
+            "epss_percentile": epss_percentile,
+            "cisa_kev": in_kev,
+            # Contextual severity
+            "contextual_severity": ctx_data["contextual_severity"],
+            "severity_adjusted": ctx_data["severity_adjusted"],
+            "severity_reason": ctx_data["severity_reason"],
+            "epss_badge": ctx_data["epss_badge"],
+        }
+    )
 
     # If severity was adjusted, propagate the new severity
     if ctx_data["severity_adjusted"]:
@@ -503,8 +506,12 @@ def compute_portfolio_risk_summary(findings: list[dict]) -> dict:
         "avg_rrf_score": avg_rrf,
         "highest_rrf": max(rrf_scores, default=0.0),
         "kev_findings_count": sum(1 for f in findings if f.get("cisa_kev")),
-        "epss_enriched_count": sum(1 for f in findings if f.get("epss_score") is not None),
-        "severity_adjusted_count": sum(1 for f in findings if f.get("severity_adjusted")),
+        "epss_enriched_count": sum(
+            1 for f in findings if f.get("epss_score") is not None
+        ),
+        "severity_adjusted_count": sum(
+            1 for f in findings if f.get("severity_adjusted")
+        ),
         "p0_count": sum(1 for f in findings if f.get("sla_tier") == "P0"),
         "p1_count": sum(1 for f in findings if f.get("sla_tier") == "P1"),
         "p2_count": sum(1 for f in findings if f.get("sla_tier") == "P2"),
@@ -513,6 +520,7 @@ def compute_portfolio_risk_summary(findings: list[dict]) -> dict:
 
 
 # ── INR Formatting ────────────────────────────────────────────────────────────
+
 
 def _format_inr(amount: int) -> str:
     """Format an integer amount in Indian Rupees notation (Rs. X,XX,XXX)."""

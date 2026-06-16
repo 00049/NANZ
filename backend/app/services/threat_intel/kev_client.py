@@ -18,15 +18,12 @@ No API key required. Free public feed.
 
 import json
 import logging
-from typing import Optional
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
-CISA_KEV_URL = (
-    "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
-)
+CISA_KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 _REDIS_KEY = "cisa_kev_catalog"
 _REDIS_ENTRY_KEY = "cisa_kev_entries"  # Full entry data for enrichment
 _REDIS_TTL = 3600  # 1 hour
@@ -35,9 +32,13 @@ _REDIS_TTL = 3600  # 1 hour
 async def _get_redis():
     """Lazily import redis to avoid hard dependency at module load time."""
     try:
-        from app.config import settings
         from redis.asyncio import Redis
-        r = Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=2)
+
+        from app.config import settings
+
+        r = Redis.from_url(
+            settings.REDIS_URL, decode_responses=True, socket_connect_timeout=2
+        )
         return r
     except Exception:
         return None
@@ -72,7 +73,10 @@ async def _fetch_kev_catalog() -> dict:
                     "short_description": vuln.get("shortDescription", ""),
                     "required_action": vuln.get("requiredAction", ""),
                     "due_date": vuln.get("dueDate", ""),
-                    "known_ransomware": vuln.get("knownRansomwareCampaignUse", "Unknown") == "Known",
+                    "known_ransomware": vuln.get(
+                        "knownRansomwareCampaignUse", "Unknown"
+                    )
+                    == "Known",
                 }
 
         logger.info(f"CISA KEV catalog fetched: {len(cve_ids)} CVEs")
@@ -150,7 +154,7 @@ async def is_in_kev(cve_id: str) -> bool:
         return False
 
 
-async def get_kev_entry(cve_id: str) -> Optional[dict]:
+async def get_kev_entry(cve_id: str) -> dict | None:
     """
     Get the full KEV entry for a CVE ID.
 
@@ -200,4 +204,8 @@ async def get_catalog_stats() -> dict:
             "catalog_source": "CISA KEV",
         }
     except Exception:
-        return {"total_cves": 0, "ransomware_associated": 0, "catalog_source": "CISA KEV"}
+        return {
+            "total_cves": 0,
+            "ransomware_associated": 0,
+            "catalog_source": "CISA KEV",
+        }

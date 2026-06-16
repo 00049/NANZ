@@ -1,13 +1,13 @@
 import logging
 
 import sentry_sdk
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 from sentry_sdk.integrations.fastapi import FastApiIntegration
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
@@ -55,19 +55,26 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 async def configure_dns() -> None:
     """Override system DNS with reliable public resolvers (avoids broken IPv6 nameservers)."""
     try:
-        import dns.resolver
         import dns.asyncresolver
+        import dns.resolver
+
         # Configure the default sync resolver
         dns.resolver.default_resolver = dns.resolver.Resolver(configure=False)
-        dns.resolver.default_resolver.nameservers = ['8.8.8.8', '1.1.1.1', '8.8.4.4']
+        dns.resolver.default_resolver.nameservers = ["8.8.8.8", "1.1.1.1", "8.8.4.4"]
         dns.resolver.default_resolver.lifetime = 5.0
         dns.resolver.default_resolver.timeout = 3.0
         # Configure the default async resolver
         dns.asyncresolver.default_resolver = dns.asyncresolver.Resolver(configure=False)
-        dns.asyncresolver.default_resolver.nameservers = ['8.8.8.8', '1.1.1.1', '8.8.4.4']
+        dns.asyncresolver.default_resolver.nameservers = [
+            "8.8.8.8",
+            "1.1.1.1",
+            "8.8.4.4",
+        ]
         dns.asyncresolver.default_resolver.lifetime = 5.0
         dns.asyncresolver.default_resolver.timeout = 3.0
-        logger.info("✅ DNS resolver configured to use public nameservers (8.8.8.8, 1.1.1.1)")
+        logger.info(
+            "✅ DNS resolver configured to use public nameservers (8.8.8.8, 1.1.1.1)"
+        )
     except Exception as e:
         logger.warning(f"Could not configure DNS resolver: {e}")
 
@@ -75,8 +82,9 @@ async def configure_dns() -> None:
 @app.on_event("startup")
 async def ensure_schema() -> None:
     """Ensure all required DB columns exist — idempotent, safe to run on every startup."""
-    from app.db.session import engine
     from sqlalchemy import text
+
+    from app.db.session import engine
 
     ADD_COLS = [
         # reports table — columns added in later migrations
@@ -131,7 +139,7 @@ async def ensure_schema() -> None:
             share_token_used VARCHAR(255),
             timestamp TIMESTAMP WITH TIME ZONE DEFAULT now()
         )
-        """
+        """,
     ]
 
     for stmt in ADD_COLS:
@@ -144,10 +152,17 @@ async def ensure_schema() -> None:
 
 
 @app.exception_handler(SQLAlchemyError)
-async def database_exception_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:
+async def database_exception_handler(
+    request: Request, exc: SQLAlchemyError
+) -> JSONResponse:
     """Return a safe 503 response for database failures."""
-    logger.error(f"Database error while handling {request.url.path}: {exc}", exc_info=True)
-    return JSONResponse(status_code=503, content={"detail": "Database temporarily unavailable"})
+    logger.error(
+        f"Database error while handling {request.url.path}: {exc}", exc_info=True
+    )
+    return JSONResponse(
+        status_code=503, content={"detail": "Database temporarily unavailable"}
+    )
+
 
 origins = [
     "http://localhost:3000",
@@ -193,13 +208,25 @@ async def add_security_headers(request: Request, call_next):
     except Exception as e:
         logger.error(f"Unhandled server error: {e}", exc_info=True)
         return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal server error"}
+            status_code=500, content={"detail": "Internal server error"}
         )
 
 
-from app.routers import health, scans, reports, payments, tools, auth, domains, workspaces, fixes, report_sharing, risk_exceptions, waitlist
-from app.routers import ingest  # BYOS scanner ingestion layer
+from app.routers import (
+    auth,
+    domains,
+    fixes,
+    health,
+    ingest,  # BYOS scanner ingestion layer
+    payments,
+    report_sharing,
+    reports,
+    risk_exceptions,
+    scans,
+    tools,
+    waitlist,
+    workspaces,
+)
 
 app.include_router(health.router)
 app.include_router(auth.router, prefix="/api/auth")
@@ -215,12 +242,15 @@ app.include_router(risk_exceptions.router, prefix="/api/v1")
 app.include_router(waitlist.router, prefix="/api/waitlist")
 app.include_router(ingest.router)  # Mounted at /api/ingest
 
+
 @app.get("/api/debug-db")
 async def debug_db():
     try:
-        from sqlalchemy.ext.asyncio import create_async_engine
         from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import create_async_engine
+
         from app.config import settings
+
         url = settings.DATABASE_URL
         safe_url = url
         if "@" in url and ":" in url:

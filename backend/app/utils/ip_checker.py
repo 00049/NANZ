@@ -1,5 +1,6 @@
 import ipaddress
 
+
 def is_private_ip(ip_str: str) -> bool:
     """Helper function to check if an IP is private."""
     try:

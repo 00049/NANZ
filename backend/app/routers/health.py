@@ -1,7 +1,9 @@
+from datetime import UTC, datetime
+
 from fastapi import APIRouter
-from datetime import datetime, timezone
 
 router = APIRouter()
+
 
 @router.get("/health", tags=["System"])
 async def health_check():
@@ -9,8 +11,9 @@ async def health_check():
     return {
         "status": "ok",
         "version": "1.0.0",
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.now(UTC).isoformat(),
     }
+
 
 @router.get("/", tags=["System"])
 async def root_redirect():
@@ -19,5 +22,5 @@ async def root_redirect():
         "message": "Welcome to the ShieldCheck API. System is Operational.",
         "docs": "/docs",
         "health": "/health",
-        "versions": ["v1"]
+        "versions": ["v1"],
     }

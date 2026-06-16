@@ -1,5 +1,6 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
-from typing import List, Optional, Literal
 
 
 class FixRequest(BaseModel):
@@ -23,8 +24,8 @@ class FixStep(BaseModel):
     order: int
     title: str
     description: str
-    code_snippet: Optional[str] = None
-    code_language: Optional[str] = None
+    code_snippet: str | None = None
+    code_language: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -35,12 +36,12 @@ class FixResponse(BaseModel):
     finding_id: str
     summary: str
     impact: str
-    steps: List[FixStep]
+    steps: list[FixStep]
     verification: str
-    verification_command: Optional[str] = None
+    verification_command: str | None = None
     estimated_minutes: int
     difficulty: Literal["easy", "medium", "hard"]
-    references: List[str]
+    references: list[str]
     cached: bool = False
 
     model_config = ConfigDict(from_attributes=True)

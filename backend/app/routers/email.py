@@ -1,11 +1,12 @@
-from fastapi import APIRouter, HTTPException, Depends
-from app.schemas.scan import ScanCreateRequest
-from app.utils.url_validator import validate_scan_url
-from app.services.scanner.email_security_check import run as run_email_check
+from fastapi import APIRouter, HTTPException, Request
+
 from app.main import limiter
-from fastapi import Request
+from app.schemas.scan import ScanCreateRequest
+from app.services.scanner.email_security_check import run as run_email_check
+from app.utils.url_validator import validate_scan_url
 
 router = APIRouter(tags=["Tools"])
+
 
 @router.post("/email-security")
 @limiter.limit("10/minute")
@@ -17,12 +18,17 @@ async def check_email_security(request: Request, body: ScanCreateRequest) -> dic
 
     is_valid, resolved_ip_or_error = validate_scan_url(url)
     if not is_valid:
-        status_code = 422 if "http://" in resolved_ip_or_error or "https://" in resolved_ip_or_error else 400
+        status_code = (
+            422
+            if "http://" in resolved_ip_or_error or "https://" in resolved_ip_or_error
+            else 400
+        )
         raise HTTPException(status_code=status_code, detail=resolved_ip_or_error)
 
     # validate_scan_url returns domain in case we pass a domain, or we extract the domain
     # To be safe, extract domain
     from urllib.parse import urlparse
+
     if not url.startswith("http"):
         url = "http://" + url
     parsed = urlparse(url)

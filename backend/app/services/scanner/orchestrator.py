@@ -716,14 +716,14 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                         scan.error_message = "All scanning checks failed."
                     scan.completed_at = end_time
 
-                    if not all_failed:
+                    if True:
                         report = Report(
                             scan_id=scan.id,
-                            overall_severity=overall_severity,
-                            overall_score=overall_score,
-                            risk_items=ai_items_dict,
-                            ai_summary=exec_summary,
-                            executive_summary=exec_summary,
+                            overall_severity="CRITICAL" if all_failed else overall_severity,
+                            overall_score=0 if all_failed else overall_score,
+                            risk_items=[] if all_failed else ai_items_dict,
+                            ai_summary="Scan failed. Detailed AI analysis is currently unavailable." if all_failed else exec_summary,
+                            executive_summary="Scan failed." if all_failed else exec_summary,
                             checks_run={"checks": list(raw_findings.keys()), "total": TOTAL_CHECK_DOMAINS},
                             domain_reports=_json_safe(domain_reports),
                             ssl_score=0,

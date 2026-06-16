@@ -1,7 +1,8 @@
 import socket
-import ipaddress
 from urllib.parse import urlparse
-from app.security.url_validator import SSRFValidator, SSRFValidationError
+
+from app.security.url_validator import SSRFValidationError, SSRFValidator
+
 
 def validate_scan_url(url: str) -> tuple[bool, str]:
     """
@@ -19,10 +20,9 @@ def validate_scan_url(url: str) -> tuple[bool, str]:
     parsed = urlparse(url)
     if parsed.hostname is None:
         return False, "Hostname cannot be None"
-    
+
     try:
         resolved_ip = socket.gethostbyname(parsed.hostname)
         return True, resolved_ip
     except socket.gaierror:
         return False, "Domain does not exist or cannot be resolved"
-

@@ -11,11 +11,9 @@ Self-hosted: Override INTERACTSH_SERVER + INTERACTSH_TOKEN in .env.
 import asyncio
 import hashlib
 import logging
-import os
 import secrets
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 import httpx
 
@@ -34,7 +32,8 @@ REQUEST_TIMEOUT = 15.0
 @dataclass
 class OASTInteraction:
     """A single interaction received by the OAST server."""
-    protocol: str           # "dns", "http", "smtp"
+
+    protocol: str  # "dns", "http", "smtp"
     unique_id: str
     raw_request: str = ""
     remote_address: str = ""
@@ -45,7 +44,8 @@ class OASTInteraction:
 @dataclass
 class OASTSession:
     """Active OAST session state."""
-    domain: str             # e.g. abc123.oast.interact.sh
+
+    domain: str  # e.g. abc123.oast.interact.sh
     correlation_id: str
     secret_key: str
     server: str
@@ -65,8 +65,8 @@ class OASTClient:
     """
 
     def __init__(self) -> None:
-        self.session: Optional[OASTSession] = None
-        self._http: Optional[httpx.AsyncClient] = None
+        self.session: OASTSession | None = None
+        self._http: httpx.AsyncClient | None = None
         self._server = INTERACTSH_SERVER
         self._token = INTERACTSH_TOKEN
 
@@ -149,8 +149,10 @@ class OASTClient:
                     headers["Authorization"] = f"Bearer {self._token}"
                 await self._http.post(
                     f"https://{self._server}/deregister",
-                    json={"correlation-id": self.session.correlation_id,
-                          "secret-key": self.session.secret_key},
+                    json={
+                        "correlation-id": self.session.correlation_id,
+                        "secret-key": self.session.secret_key,
+                    },
                     headers=headers,
                 )
             except Exception:
@@ -184,7 +186,7 @@ class OASTClient:
         return []
 
     @property
-    def callback_domain(self) -> Optional[str]:
+    def callback_domain(self) -> str | None:
         return self.session.domain if self.session else None
 
     @property
@@ -193,6 +195,7 @@ class OASTClient:
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
 
 def _derive_public_key(secret_key: str) -> str:
     """Derive a pseudo-public key from the secret for registration."""
@@ -205,14 +208,16 @@ def _parse_interactions(raw_data: list) -> list[OASTInteraction]:
     for item in raw_data:
         if not isinstance(item, dict):
             continue
-        result.append(OASTInteraction(
-            protocol=item.get("protocol", "unknown"),
-            unique_id=item.get("unique-id", ""),
-            raw_request=item.get("raw-request", "")[:1000],  # cap size
-            remote_address=item.get("remote-address", ""),
-            timestamp=item.get("timestamp", ""),
-            full_id=item.get("full-id", ""),
-        ))
+        result.append(
+            OASTInteraction(
+                protocol=item.get("protocol", "unknown"),
+                unique_id=item.get("unique-id", ""),
+                raw_request=item.get("raw-request", "")[:1000],  # cap size
+                remote_address=item.get("remote-address", ""),
+                timestamp=item.get("timestamp", ""),
+                full_id=item.get("full-id", ""),
+            )
+        )
     return result
 
 

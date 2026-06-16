@@ -2,17 +2,15 @@ import asyncio
 import hashlib
 import json
 import logging
-import ssl
+from urllib.parse import urlparse
 from uuid import UUID
+
+from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from redis.asyncio import Redis
-from urllib.parse import urlparse
 
 from app.models import Report, Scan
-from app.config import settings
-from app.tasks.scan_tasks import run_scan
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +38,9 @@ async def create_new_scan(
 
     # ── Cache check ──
     try:
-        cached_scan_id = await asyncio.wait_for(redis_client.get(cache_key), timeout=1.0)
+        cached_scan_id = await asyncio.wait_for(
+            redis_client.get(cache_key), timeout=1.0
+        )
         if cached_scan_id:
             result = await db.execute(select(Scan).where(Scan.id == cached_scan_id))
             existing = result.scalars().first()
@@ -63,7 +63,7 @@ async def create_new_scan(
         ip_address=resolved_ip,
         requester_ip=client_ip,
         user_id=user_id,
-        status="queued"
+        status="queued",
     )
     try:
         db.add(scan)
@@ -79,11 +79,14 @@ async def create_new_scan(
     # ── PRIMARY: Dispatch via FastAPI BackgroundTasks ──
     try:
         from app.services.scanner.orchestrator import run_full_scan
+
         logger.info(f"Dispatching scan {scan_id_str} to background tasks.")
         if background_tasks:
             background_tasks.add_task(run_full_scan, scan_id_str, url, redis_client)
         else:
-            logger.warning("No background_tasks provided, attempting asyncio.create_task")
+            logger.warning(
+                "No background_tasks provided, attempting asyncio.create_task"
+            )
             asyncio.create_task(run_full_scan(scan_id_str, url, redis_client))
     except Exception as e:
         logger.error(f"Failed to enqueue scan task: {e}", exc_info=True)
@@ -100,7 +103,9 @@ async def create_new_scan(
     }
 
 
-async def get_scan_status_data(scan_id: UUID, db: AsyncSession, redis_client: Redis) -> dict:
+async def get_scan_status_data(
+    scan_id: UUID, db: AsyncSession, redis_client: Redis
+) -> dict:
     """Return scan status, progress metadata, and preview data when complete."""
     result = await db.execute(select(Scan).where(Scan.id == scan_id))
     scan = result.scalars().first()
@@ -121,7 +126,9 @@ async def get_scan_status_data(scan_id: UUID, db: AsyncSession, redis_client: Re
     }
 
     if scan.status == "complete":
-        report_result = await db.execute(select(Report).where(Report.scan_id == scan_id))
+        report_result = await db.execute(
+            select(Report).where(Report.scan_id == scan_id)
+        )
         report = report_result.scalars().first()
         if report:
             response_data["overall_severity"] = report.overall_severity
@@ -171,7 +178,9 @@ async def get_scan_preview_data(scan_id: UUID, db: AsyncSession) -> dict:
 
     exec_summary = report.executive_summary or ""
     sentences = exec_summary.split(". ")
-    free_summary = ". ".join(sentences[:2]) + "." if len(sentences) > 1 else exec_summary
+    free_summary = (
+        ". ".join(sentences[:2]) + "." if len(sentences) > 1 else exec_summary
+    )
 
     total_findings = report.total_findings or 0
     locked_count = max(0, total_findings - 3)

@@ -8,12 +8,10 @@ Detects lookalike domains threatening your brand via three tiers:
 """
 
 from __future__ import annotations
-import asyncio
+
 import logging
 import re
-from dataclasses import dataclass, field, asdict
-from typing import Optional
-from datetime import datetime
+from dataclasses import asdict, dataclass, field
 
 import httpx
 
@@ -60,16 +58,17 @@ HOMOGLYPH_TABLE: dict[str, list[str]] = {
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BrandThreat:
-    threat_type: str          # "typosquat" | "homoglyph" | "ct_alert"
-    domain: str               # The suspicious domain
-    similarity_score: float   # 0.0–1.0
-    is_live: bool             # Whether domain resolves
-    cert_issued_at: Optional[str] = None
-    issuing_ca: Optional[str] = None
-    ip_address: Optional[str] = None
-    threat_level: str = "MEDIUM"   # CRITICAL / HIGH / MEDIUM / LOW
+    threat_type: str  # "typosquat" | "homoglyph" | "ct_alert"
+    domain: str  # The suspicious domain
+    similarity_score: float  # 0.0–1.0
+    is_live: bool  # Whether domain resolves
+    cert_issued_at: str | None = None
+    issuing_ca: str | None = None
+    ip_address: str | None = None
+    threat_level: str = "MEDIUM"  # CRITICAL / HIGH / MEDIUM / LOW
 
 
 @dataclass
@@ -79,12 +78,13 @@ class BrandThreatResult:
     typosquats_checked: int = 0
     homoglyphs_checked: int = 0
     ct_certs_checked: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 # ---------------------------------------------------------------------------
 # Levenshtein distance (Tier 1 — typosquatting)
 # ---------------------------------------------------------------------------
+
 
 def _levenshtein(s1: str, s2: str) -> int:
     if len(s1) < len(s2):
@@ -107,7 +107,7 @@ def _generate_typosquats(name: str) -> list[str]:
 
     # Character deletion
     for i in range(n):
-        variants.add(name[:i] + name[i + 1:])
+        variants.add(name[:i] + name[i + 1 :])
 
     # Character transposition
     for i in range(n - 1):
@@ -116,8 +116,18 @@ def _generate_typosquats(name: str) -> list[str]:
         variants.add("".join(swapped))
 
     # Character insertion (adjacent keyboard keys — simplified)
-    kbd = {"a": "sq", "e": "rw", "i": "ou", "o": "ip", "u": "yi",
-           "s": "ad", "n": "mb", "t": "yr", "r": "et", "l": "k"}
+    kbd = {
+        "a": "sq",
+        "e": "rw",
+        "i": "ou",
+        "o": "ip",
+        "u": "yi",
+        "s": "ad",
+        "n": "mb",
+        "t": "yr",
+        "r": "et",
+        "l": "k",
+    }
     for i, ch in enumerate(name):
         for nb in kbd.get(ch, ""):
             variants.add(name[:i] + nb + name[i:])
@@ -138,6 +148,7 @@ def _generate_typosquats(name: str) -> list[str]:
 # Homoglyph generator (Tier 2)
 # ---------------------------------------------------------------------------
 
+
 def generate_homoglyphs(name: str, max_variants: int = 50) -> list[str]:
     """
     Generate Unicode homoglyph variants of a domain name (SLD part only).
@@ -148,13 +159,13 @@ def generate_homoglyphs(name: str, max_variants: int = 50) -> list[str]:
     for i, ch in enumerate(name.lower()):
         subs = HOMOGLYPH_TABLE.get(ch, [])
         for s in subs:
-            variants.add(name[:i] + s + name[i + 1:])
+            variants.add(name[:i] + s + name[i + 1 :])
             # Double substitution (slightly slower but catches combos)
             for j, ch2 in enumerate(name.lower()):
                 if j != i:
                     for s2 in HOMOGLYPH_TABLE.get(ch2, []):
-                        v = name[:i] + s + name[i + 1:]
-                        v = v[:j] + s2 + v[j + 1:]
+                        v = name[:i] + s + name[i + 1 :]
+                        v = v[:j] + s2 + v[j + 1 :]
                         variants.add(v)
                         if len(variants) >= max_variants:
                             break
@@ -167,9 +178,8 @@ def generate_homoglyphs(name: str, max_variants: int = 50) -> list[str]:
 # Certificate Transparency monitor (Tier 3 — crt.sh)
 # ---------------------------------------------------------------------------
 
-async def _query_ct_logs(
-    client: httpx.AsyncClient, domain: str
-) -> list[dict]:
+
+async def _query_ct_logs(client: httpx.AsyncClient, domain: str) -> list[dict]:
     """Query crt.sh for recently issued certificates similar to the target domain."""
     try:
         # Query crt.sh for the exact domain and all subdomains
@@ -196,11 +206,16 @@ def _parse_cert_domain(name_value: str) -> list[str]:
 # Live domain resolution check
 # ---------------------------------------------------------------------------
 
-async def _is_domain_live(client: httpx.AsyncClient, fqdn: str) -> tuple[bool, Optional[str]]:
+
+async def _is_domain_live(
+    client: httpx.AsyncClient, fqdn: str
+) -> tuple[bool, str | None]:
     """Return (is_live, ip_address) by making a HEAD request."""
     for scheme in ("https://", "http://"):
         try:
-            resp = await client.head(f"{scheme}{fqdn}", timeout=5.0, follow_redirects=True)
+            await client.head(
+                f"{scheme}{fqdn}", timeout=5.0, follow_redirects=True
+            )
             return True, None  # IP extraction would require DNS lookup
         except Exception:
             pass
@@ -211,6 +226,7 @@ async def _is_domain_live(client: httpx.AsyncClient, fqdn: str) -> tuple[bool, O
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 async def check_brand_threats(domain: str) -> dict:
     """
     Run all three tiers of brand protection checks against a domain.
@@ -219,7 +235,7 @@ async def check_brand_threats(domain: str) -> dict:
     # Extract SLD (e.g., "bennett" from "bennett.edu.in")
     parts = domain.split(".")
     if len(parts) >= 2:
-        sld = parts[-2]   # second-level domain
+        sld = parts[-2]  # second-level domain
         tld = "." + ".".join(parts[-1:]) if len(parts) >= 3 else f".{parts[-1]}"
     else:
         sld = domain
@@ -242,14 +258,16 @@ async def check_brand_threats(domain: str) -> dict:
                 continue
             is_live, ip = await _is_domain_live(client, fqdn)
             if is_live:
-                threats.append(BrandThreat(
-                    threat_type="typosquat",
-                    domain=fqdn,
-                    similarity_score=round(sim, 3),
-                    is_live=True,
-                    ip_address=ip,
-                    threat_level="HIGH" if sim > 0.85 else "MEDIUM",
-                ))
+                threats.append(
+                    BrandThreat(
+                        threat_type="typosquat",
+                        domain=fqdn,
+                        similarity_score=round(sim, 3),
+                        is_live=True,
+                        ip_address=ip,
+                        threat_level="HIGH" if sim > 0.85 else "MEDIUM",
+                    )
+                )
 
         # ── Tier 2: Homoglyph spoofing ────────────────────────────────────
         homoglyphs = generate_homoglyphs(sld, max_variants=30)
@@ -260,14 +278,16 @@ async def check_brand_threats(domain: str) -> dict:
             is_live, ip = await _is_domain_live(client, fqdn)
             # Homoglyphs that resolve are immediately HIGH/CRITICAL (active phishing infra)
             if is_live:
-                threats.append(BrandThreat(
-                    threat_type="homoglyph",
-                    domain=fqdn,
-                    similarity_score=0.95,  # visually identical
-                    is_live=True,
-                    ip_address=ip,
-                    threat_level="CRITICAL",
-                ))
+                threats.append(
+                    BrandThreat(
+                        threat_type="homoglyph",
+                        domain=fqdn,
+                        similarity_score=0.95,  # visually identical
+                        is_live=True,
+                        ip_address=ip,
+                        threat_level="CRITICAL",
+                    )
+                )
 
         # ── Tier 3: CT Log monitoring ─────────────────────────────────────
         certs = await _query_ct_logs(client, domain)
@@ -277,28 +297,32 @@ async def check_brand_threats(domain: str) -> dict:
         for cert in certs:
             name_value = cert.get("name_value", "")
             cert_domains = _parse_cert_domain(name_value)
-            issued_at   = cert.get("entry_timestamp", "")
-            ca_name     = cert.get("issuer_name", "Unknown CA")
-            cert_id     = cert.get("id", "")
+            issued_at = cert.get("entry_timestamp", "")
+            ca_name = cert.get("issuer_name", "Unknown CA")
+            cert.get("id", "")
 
             for cert_domain in cert_domains:
                 if cert_domain == domain or cert_domain in seen_ct:
                     continue
                 # Only flag if similar to the target SLD
-                cert_sld = cert_domain.split(".")[0] if "." in cert_domain else cert_domain
+                cert_sld = (
+                    cert_domain.split(".")[0] if "." in cert_domain else cert_domain
+                )
                 dist = _levenshtein(sld, cert_sld)
-                sim  = 1.0 - (dist / max(len(sld), len(cert_sld), 1))
+                sim = 1.0 - (dist / max(len(sld), len(cert_sld), 1))
                 if sim >= 0.75 and cert_domain != domain:
                     seen_ct.add(cert_domain)
-                    threats.append(BrandThreat(
-                        threat_type="ct_alert",
-                        domain=cert_domain,
-                        similarity_score=round(sim, 3),
-                        is_live=False,   # CT alert — not yet verified live
-                        cert_issued_at=issued_at,
-                        issuing_ca=ca_name,
-                        threat_level="HIGH" if sim > 0.9 else "MEDIUM",
-                    ))
+                    threats.append(
+                        BrandThreat(
+                            threat_type="ct_alert",
+                            domain=cert_domain,
+                            similarity_score=round(sim, 3),
+                            is_live=False,  # CT alert — not yet verified live
+                            cert_issued_at=issued_at,
+                            issuing_ca=ca_name,
+                            threat_level="HIGH" if sim > 0.9 else "MEDIUM",
+                        )
+                    )
 
     result.threats = threats
 
@@ -307,10 +331,10 @@ async def check_brand_threats(domain: str) -> dict:
         "domain": domain,
         "total_threats": len(threats),
         "critical_threats": sum(1 for t in threats if t.threat_level == "CRITICAL"),
-        "high_threats":     sum(1 for t in threats if t.threat_level == "HIGH"),
-        "medium_threats":   sum(1 for t in threats if t.threat_level == "MEDIUM"),
+        "high_threats": sum(1 for t in threats if t.threat_level == "HIGH"),
+        "medium_threats": sum(1 for t in threats if t.threat_level == "MEDIUM"),
         "typosquats_checked": result.typosquats_checked,
         "homoglyphs_checked": result.homoglyphs_checked,
-        "ct_certs_checked":   result.ct_certs_checked,
+        "ct_certs_checked": result.ct_certs_checked,
         "threats": [asdict(t) for t in threats],
     }

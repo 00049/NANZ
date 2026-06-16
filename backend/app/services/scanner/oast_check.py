@@ -18,12 +18,11 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Optional
-from urllib.parse import urljoin, urlparse, urlencode
+from urllib.parse import urlparse
 
 import httpx
 
-from app.services.oast.oast_client import OASTClient, OASTInteraction
+from app.services.oast.oast_client import OASTClient
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +31,26 @@ MAX_CONCURRENT = 4
 
 # URL parameters that commonly accept URL values (SSRF surfaces)
 SSRF_PARAMS = [
-    "url", "redirect", "callback", "webhook", "feed", "next", "return",
-    "target", "dest", "destination", "redir", "link", "src", "source",
-    "uri", "path", "endpoint", "proxy", "load", "fetch",
+    "url",
+    "redirect",
+    "callback",
+    "webhook",
+    "feed",
+    "next",
+    "return",
+    "target",
+    "dest",
+    "destination",
+    "redir",
+    "link",
+    "src",
+    "source",
+    "uri",
+    "path",
+    "endpoint",
+    "proxy",
+    "load",
+    "fetch",
 ]
 
 # HTTP headers to inject OAST domain into (header injection detection)
@@ -57,8 +73,16 @@ LOG4J_INDICATOR_PAYLOADS = [
 
 # Patterns indicating XSS output encoding issues (surface detection)
 XSS_SURFACE_CHECKS = [
-    ("<b>nanztest</b>", r"<b>nanztest</b>", "Reflected HTML without encoding — XSS surface"),
-    ("nanz<script>void(0)</script>test", r"<script>void\(0\)</script>", "Script tag reflected — XSS surface"),
+    (
+        "<b>nanztest</b>",
+        r"<b>nanztest</b>",
+        "Reflected HTML without encoding — XSS surface",
+    ),
+    (
+        "nanz<script>void(0)</script>test",
+        r"<script>void\(0\)</script>",
+        "Script tag reflected — XSS surface",
+    ),
 ]
 
 
@@ -74,10 +98,12 @@ class OASTResult:
     interactions_received: list = field(default_factory=list)
     oast_domain_used: str = ""
     probes_sent: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
-async def run(url: str, domain: str, oast_client: Optional[OASTClient] = None) -> OASTResult:
+async def run(
+    url: str, domain: str, oast_client: OASTClient | None = None
+) -> OASTResult:
     """
     Run OAST checks. Accepts optional pre-started OASTClient.
     Degrades gracefully to surface-only detection without OAST.
@@ -142,6 +168,7 @@ async def run(url: str, domain: str, oast_client: Optional[OASTClient] = None) -
 
 # ── SSRF Param Probes ───────────────────────────────────────────────────────────
 
+
 async def _check_ssrf_params(
     client: httpx.AsyncClient,
     url: str,
@@ -168,12 +195,14 @@ async def _check_ssrf_params(
                 resp = await client.get(probe_url)
                 # Check if the server made a connection back (non-redirect 2xx means it fetched)
                 if resp.status_code in (200, 201) and oast_domain in resp.text:
-                    result.ssrf_endpoints.append({
-                        "param": param,
-                        "url": probe_url,
-                        "status": resp.status_code,
-                        "severity": "CRITICAL",
-                    })
+                    result.ssrf_endpoints.append(
+                        {
+                            "param": param,
+                            "url": probe_url,
+                            "status": resp.status_code,
+                            "severity": "CRITICAL",
+                        }
+                    )
             except (httpx.TimeoutException, httpx.ConnectError):
                 pass
             except Exception as exc:
@@ -184,6 +213,7 @@ async def _check_ssrf_params(
 
 
 # ── Header Injection Probes ─────────────────────────────────────────────────────
+
 
 async def _check_header_injection(
     client: httpx.AsyncClient,
@@ -203,19 +233,24 @@ async def _check_header_injection(
                 result.probes_sent += 1
                 headers = {header_name: oast_domain}
                 await client.get(url, headers=headers)
-                result.header_injection_details.append({
-                    "header": header_name,
-                    "injected_value": oast_domain,
-                    "note": "Probed — OAST callback confirms exploitation",
-                })
+                result.header_injection_details.append(
+                    {
+                        "header": header_name,
+                        "injected_value": oast_domain,
+                        "note": "Probed — OAST callback confirms exploitation",
+                    }
+                )
             except Exception as exc:
                 logger.debug(f"Header probe {header_name} error: {exc}")
             await asyncio.sleep(0.2)
 
-    await asyncio.gather(*[probe_header(h) for h in INJECTION_HEADERS], return_exceptions=True)
+    await asyncio.gather(
+        *[probe_header(h) for h in INJECTION_HEADERS], return_exceptions=True
+    )
 
 
 # ── Log4Shell Surface Detection ─────────────────────────────────────────────────
+
 
 async def _check_log4j_surface(
     client: httpx.AsyncClient,
@@ -243,17 +278,19 @@ async def _check_log4j_surface(
             # If ${java:version} literal appears in response → log injection surface
             if "${java:version}" in body or "java:version" in body:
                 result.log4j_surface_detected = True
-                result.log4j_indicator_details.append({
-                    "type": "literal_reflection",
-                    "detail": "Log4j expression reflected in response body",
-                    "severity": "RED",
-                })
+                result.log4j_indicator_details.append(
+                    {
+                        "type": "literal_reflection",
+                        "detail": "Log4j expression reflected in response body",
+                        "severity": "RED",
+                    }
+                )
         except Exception as exc:
             logger.debug(f"Log4j surface check error: {exc}")
         return
 
     # With OAST: Use OAST domain in JNDI-style probe (harmless structure)
-    jndi_safe = f"${{java:os}} ${{env:HOME}}"
+    jndi_safe = "${java:os} ${env:HOME}"
     oast_probe_ua = f"${{{oast_domain}}}"  # Non-JNDI, just DNS lookup trigger
 
     try:
@@ -269,16 +306,19 @@ async def _check_log4j_surface(
         body = resp.text[:3000]
         if any(kw in body for kw in ["java:version", "java:os", "${env:"]):
             result.log4j_surface_detected = True
-            result.log4j_indicator_details.append({
-                "type": "expression_reflected",
-                "detail": "Log4j-style expression reflected — server may process EL expressions",
-                "severity": "CRITICAL",
-            })
+            result.log4j_indicator_details.append(
+                {
+                    "type": "expression_reflected",
+                    "detail": "Log4j-style expression reflected — server may process EL expressions",
+                    "severity": "CRITICAL",
+                }
+            )
     except Exception as exc:
         logger.debug(f"Log4j OAST probe error: {exc}")
 
 
 # ── XSS Surface Detection ───────────────────────────────────────────────────────
+
 
 async def _detect_xss_surfaces(
     client: httpx.AsyncClient,
@@ -294,11 +334,31 @@ async def _detect_xss_surfaces(
 
     surfaces_to_check = [
         # Search parameter — most common XSS surface
-        ("search", f"{base}/?q=<b>nanztest</b>", re.compile(r"<b>nanztest</b>"), "Search parameter reflects HTML"),
-        ("search_s", f"{base}/?s=<b>nanztest</b>", re.compile(r"<b>nanztest</b>"), "Search parameter reflects HTML"),
-        ("query", f"{base}/?query=<b>nanztest</b>", re.compile(r"<b>nanztest</b>"), "Query parameter reflects HTML"),
+        (
+            "search",
+            f"{base}/?q=<b>nanztest</b>",
+            re.compile(r"<b>nanztest</b>"),
+            "Search parameter reflects HTML",
+        ),
+        (
+            "search_s",
+            f"{base}/?s=<b>nanztest</b>",
+            re.compile(r"<b>nanztest</b>"),
+            "Search parameter reflects HTML",
+        ),
+        (
+            "query",
+            f"{base}/?query=<b>nanztest</b>",
+            re.compile(r"<b>nanztest</b>"),
+            "Query parameter reflects HTML",
+        ),
         # File path parameter
-        ("file", f"{base}/?file=nanztest.txt", re.compile(r"nanztest\.txt"), "File parameter reflects input"),
+        (
+            "file",
+            f"{base}/?file=nanztest.txt",
+            re.compile(r"nanztest\.txt"),
+            "File parameter reflects input",
+        ),
     ]
 
     for surface_name, test_url, pattern, description in surfaces_to_check:
@@ -306,13 +366,15 @@ async def _detect_xss_surfaces(
             result.probes_sent += 1
             resp = await client.get(test_url)
             if resp.status_code == 200 and pattern.search(resp.text):
-                result.xss_surfaces_found.append({
-                    "surface_type": surface_name,
-                    "url": test_url,
-                    "description": description,
-                    "severity": "AMBER",
-                    "note": "Reflected input detected — manual XSS testing recommended",
-                })
+                result.xss_surfaces_found.append(
+                    {
+                        "surface_type": surface_name,
+                        "url": test_url,
+                        "description": description,
+                        "severity": "AMBER",
+                        "note": "Reflected input detected — manual XSS testing recommended",
+                    }
+                )
         except Exception as exc:
             logger.debug(f"XSS surface check {surface_name} error: {exc}")
         await asyncio.sleep(0.1)

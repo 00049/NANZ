@@ -1,6 +1,7 @@
 import logging
+from typing import Any
+
 import shodan
-from typing import Dict, Any, Optional
 
 from app.config import settings
 
@@ -22,13 +23,13 @@ def _get_api() -> shodan.Shodan:
     return _shodan_api
 
 
-async def host_lookup(ip: str) -> Dict[str, Any]:
+async def host_lookup(ip: str) -> dict[str, Any]:
     """
     Look up an IP address in Shodan.
-    
+
     Args:
         ip (str): The IP address to look up.
-        
+
     Returns:
         dict: The host information dictionary.
     """
@@ -46,17 +47,19 @@ async def host_lookup(ip: str) -> Dict[str, Any]:
         logger.warning(str(e))
         return {"error": str(e)}
     except Exception as e:
-        logger.error(f"Unexpected error during Shodan host lookup for {ip}: {e}", exc_info=True)
+        logger.error(
+            f"Unexpected error during Shodan host lookup for {ip}: {e}", exc_info=True
+        )
         return {"error": "Internal error during Shodan host lookup"}
 
 
-async def search(query: str) -> Dict[str, Any]:
+async def search(query: str) -> dict[str, Any]:
     """
     Search Shodan using a query string.
-    
+
     Args:
         query (str): The search query.
-        
+
     Returns:
         dict: The search results.
     """
@@ -71,18 +74,20 @@ async def search(query: str) -> Dict[str, Any]:
         logger.warning(str(e))
         return {"error": str(e)}
     except Exception as e:
-        logger.error(f"Unexpected error during Shodan search for '{query}': {e}", exc_info=True)
+        logger.error(
+            f"Unexpected error during Shodan search for '{query}': {e}", exc_info=True
+        )
         return {"error": "Internal error during Shodan search"}
 
 
-async def domain_lookup(domain: str) -> Dict[str, Any]:
+async def domain_lookup(domain: str) -> dict[str, Any]:
     """
     Get all subdomains and DNS information for a given domain from Shodan.
     Requires an Enterprise API key (or upgraded API key) depending on the endpoint.
-    
+
     Args:
         domain (str): The domain to look up.
-        
+
     Returns:
         dict: The domain information.
     """
@@ -97,5 +102,8 @@ async def domain_lookup(domain: str) -> Dict[str, Any]:
         logger.warning(str(e))
         return {"error": str(e)}
     except Exception as e:
-        logger.error(f"Unexpected error during Shodan domain lookup for {domain}: {e}", exc_info=True)
+        logger.error(
+            f"Unexpected error during Shodan domain lookup for {domain}: {e}",
+            exc_info=True,
+        )
         return {"error": "Internal error during Shodan domain lookup"}

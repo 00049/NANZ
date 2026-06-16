@@ -16,8 +16,8 @@ v2 additions:
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Optional, Any
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -63,48 +63,80 @@ OWASP_TOP10_COVERAGE = {
         "id": "A01:2021",
         "name": "Broken Access Control",
         "modules": ["api_security_check", "business_logic_check", "cors_check"],
-        "finding_keys": ["bola_vulnerable_endpoints", "auth_bypass_endpoints",
-                         "cors_credentials_wildcard", "cms_admin_no_auth"],
+        "finding_keys": [
+            "bola_vulnerable_endpoints",
+            "auth_bypass_endpoints",
+            "cors_credentials_wildcard",
+            "cms_admin_no_auth",
+        ],
     },
     "A02_Cryptographic_Failures": {
         "id": "A02:2021",
         "name": "Cryptographic Failures",
         "modules": ["ssl_check", "http_methods_check", "cookie_check"],
-        "finding_keys": ["ssl_invalid", "ssl_tls10_supported", "ssl_tls11_supported",
-                         "session_cookie_insecure", "headers_no_https_redirect"],
+        "finding_keys": [
+            "ssl_invalid",
+            "ssl_tls10_supported",
+            "ssl_tls11_supported",
+            "session_cookie_insecure",
+            "headers_no_https_redirect",
+        ],
     },
     "A03_Injection": {
         "id": "A03:2021",
         "name": "Injection",
         "modules": ["webapp_check", "iast_behavioral", "oast_check"],
-        "finding_keys": ["webapp_sql_injection", "db_errors_found", "xss_surfaces_found"],
+        "finding_keys": [
+            "webapp_sql_injection",
+            "db_errors_found",
+            "xss_surfaces_found",
+        ],
     },
     "A04_Insecure_Design": {
         "id": "A04:2021",
         "name": "Insecure Design",
         "modules": ["business_logic_check", "api_security_check"],
-        "finding_keys": ["price_manipulation_surface", "account_enumeration_confirmed",
-                         "transaction_replay_surface"],
+        "finding_keys": [
+            "price_manipulation_surface",
+            "account_enumeration_confirmed",
+            "transaction_replay_surface",
+        ],
     },
     "A05_Security_Misconfiguration": {
         "id": "A05:2021",
         "name": "Security Misconfiguration",
-        "modules": ["headers_check", "graphql_check", "cors_check", "http_methods_check"],
-        "finding_keys": ["headers_many_missing", "graphql_introspection_enabled",
-                         "debug_endpoints_exposed", "swagger_ui_exposed"],
+        "modules": [
+            "headers_check",
+            "graphql_check",
+            "cors_check",
+            "http_methods_check",
+        ],
+        "finding_keys": [
+            "headers_many_missing",
+            "graphql_introspection_enabled",
+            "debug_endpoints_exposed",
+            "swagger_ui_exposed",
+        ],
     },
     "A06_Vulnerable_Components": {
         "id": "A06:2021",
         "name": "Vulnerable and Outdated Components",
         "modules": ["dependency_check", "javascript_check", "cms_check"],
-        "finding_keys": ["vulnerable_libraries", "jquery_outdated", "cms_wp_vulnerable_plugins"],
+        "finding_keys": [
+            "vulnerable_libraries",
+            "jquery_outdated",
+            "cms_wp_vulnerable_plugins",
+        ],
     },
     "A07_Authentication_Failures": {
         "id": "A07:2021",
         "name": "Identification and Authentication Failures",
         "modules": ["api_security_check", "business_logic_check"],
-        "finding_keys": ["auth_bypass_endpoints", "missing_rate_limiting",
-                         "account_enumeration_confirmed"],
+        "finding_keys": [
+            "auth_bypass_endpoints",
+            "missing_rate_limiting",
+            "account_enumeration_confirmed",
+        ],
     },
     "A08_Data_Integrity": {
         "id": "A08:2021",
@@ -116,8 +148,11 @@ OWASP_TOP10_COVERAGE = {
         "id": "A09:2021",
         "name": "Security Logging and Monitoring Failures",
         "modules": ["iast_behavioral", "headers_check"],
-        "finding_keys": ["stack_traces_found", "debug_endpoints_exposed",
-                         "error_verbosity_score"],
+        "finding_keys": [
+            "stack_traces_found",
+            "debug_endpoints_exposed",
+            "error_verbosity_score",
+        ],
     },
     "A10_SSRF": {
         "id": "A10:2021",
@@ -169,17 +204,19 @@ MODULE_WEIGHTS = {
 @dataclass
 class OWASPCoverage:
     """OWASP Top 10 coverage result for a single category."""
+
     id: str
     name: str
     covered: bool
     findings_count: int
-    severity: str    # worst severity in this category
+    severity: str  # worst severity in this category
     modules_tested: list = field(default_factory=list)
 
 
 @dataclass
 class RemediationItem:
     """Ordered remediation action with effort + impact."""
+
     priority: int
     severity: str
     title: str
@@ -193,6 +230,7 @@ class RemediationItem:
 @dataclass
 class ASPMReport:
     """Unified ASPM posture report."""
+
     # Posture score (0-100)
     aspm_score: int
     posture_tier: str
@@ -208,7 +246,7 @@ class ASPMReport:
     total_findings: int
 
     # OWASP coverage
-    owasp_coverage: list = field(default_factory=list)   # list of OWASPCoverage dicts
+    owasp_coverage: list = field(default_factory=list)  # list of OWASPCoverage dicts
     owasp_covered_count: int = 0
     owasp_total: int = 10
 
@@ -218,7 +256,9 @@ class ASPMReport:
     enterprise_modules_active: bool = False
 
     # Remediation roadmap
-    remediation_roadmap: list = field(default_factory=list)   # ordered RemediationItem dicts
+    remediation_roadmap: list = field(
+        default_factory=list
+    )  # ordered RemediationItem dicts
     quick_wins: list = field(default_factory=list)
     immediate_actions: list = field(default_factory=list)
 
@@ -228,7 +268,7 @@ class ASPMReport:
     pci_impact: float = 0.0
 
     # Trends (if historical data available)
-    score_trend: str = "stable"   # "improving", "declining", "stable"
+    score_trend: str = "stable"  # "improving", "declining", "stable"
 
     # ── Enterprise Risk Quantification (v2) ──────────────────────────────────────
     risk_portfolio_summary: dict = field(default_factory=dict)
@@ -250,7 +290,7 @@ class ASPMReport:
     owasp_llm_coverage_score: int = 0
 
     # ── Deep Compliance (v2) ─────────────────────────────────────────────────────
-    compliance_v2: dict = field(default_factory=dict)      # Full deep compliance object
+    compliance_v2: dict = field(default_factory=dict)  # Full deep compliance object
     dpdp_penalty_crore: int = 0
     dpdp_risk_level: str = ""
     gdpr_status: str = ""
@@ -292,7 +332,9 @@ def compute_aspm_report(
     tier_data = _get_posture_tier(aspm_score)
 
     # ── Enterprise Risk Quantification (v2) ──
-    all_findings_enriched = _enrich_findings_with_risk_metrics(all_findings, raw_findings)
+    all_findings_enriched = _enrich_findings_with_risk_metrics(
+        all_findings, raw_findings
+    )
     portfolio_summary = _compute_portfolio_risk_summary(all_findings_enriched)
 
     # ── Modules tested ──
@@ -300,19 +342,17 @@ def compute_aspm_report(
     modules_tested = list(raw_findings.keys()) + list(enterprise_results.keys())
     enterprise_keys = set(enterprise_results.keys())
     modules_with_findings = [
-        k for k, v in enterprise_results.items()
-        if v and not v.get("error")
-    ] + [
-        k for k in raw_findings
-        if raw_findings[k].get("status") == "success"
-    ]
+        k for k, v in enterprise_results.items() if v and not v.get("error")
+    ] + [k for k in raw_findings if raw_findings[k].get("status") == "success"]
 
     # ── Structured OWASP Coverage (v2 — uses structured mapper) ──
     try:
-        from app.services.owasp_mapper import compute_owasp_top10_coverage
         from app.services.owasp_llm_mapper import compute_owasp_llm_coverage
+        from app.services.owasp_mapper import compute_owasp_top10_coverage
 
-        owasp_top10_structured = compute_owasp_top10_coverage(all_findings, enterprise_results, modules_tested)
+        owasp_top10_structured = compute_owasp_top10_coverage(
+            all_findings, enterprise_results, modules_tested
+        )
         llm_results = enterprise_results.get("llm_security") or {}
         owasp_llm_structured = compute_owasp_llm_coverage(llm_results, all_findings)
     except Exception as e:
@@ -324,7 +364,9 @@ def compute_aspm_report(
     compliance_v2 = _compute_deep_compliance(all_findings, raw_findings)
 
     # ── Legacy OWASP coverage (kept for backward compat) ──
-    owasp_coverage = _compute_owasp_coverage(all_findings, enterprise_results, raw_findings)
+    owasp_coverage = _compute_owasp_coverage(
+        all_findings, enterprise_results, raw_findings
+    )
     covered_count = sum(1 for c in owasp_coverage if c["covered"])
 
     # ── Build remediation roadmap ──
@@ -348,15 +390,21 @@ def compute_aspm_report(
         medium_count=medium,
         low_count=low,
         total_findings=len(all_findings),
-        owasp_coverage=[c.__dict__ if hasattr(c, "__dict__") else c for c in owasp_coverage],
+        owasp_coverage=[
+            c.__dict__ if hasattr(c, "__dict__") else c for c in owasp_coverage
+        ],
         owasp_covered_count=covered_count,
         owasp_total=10,
         modules_tested=list(set(modules_tested)),
         modules_with_findings=list(set(modules_with_findings)),
         enterprise_modules_active=bool(enterprise_keys),
-        remediation_roadmap=[r.__dict__ if hasattr(r, "__dict__") else r for r in roadmap[:20]],
+        remediation_roadmap=[
+            r.__dict__ if hasattr(r, "__dict__") else r for r in roadmap[:20]
+        ],
         quick_wins=[r.__dict__ if hasattr(r, "__dict__") else r for r in quick_wins],
-        immediate_actions=[r.__dict__ if hasattr(r, "__dict__") else r for r in immediate],
+        immediate_actions=[
+            r.__dict__ if hasattr(r, "__dict__") else r for r in immediate
+        ],
         dpdp_impact=round(dpdp_impact, 1),
         gdpr_impact=round(gdpr_impact, 1),
         pci_impact=round(pci_impact, 1),
@@ -377,12 +425,14 @@ def compute_aspm_report(
         owasp_coverage_score=owasp_top10_structured.get("owasp_coverage_score", 0),
         owasp_llm_coverage_score=owasp_llm_structured.get("llm_coverage_score", 0),
         compliance_v2=compliance_v2,
-        dpdp_penalty_crore=compliance_v2.get("dpdp", {}).get("total_max_penalty_crore", 0),
+        dpdp_penalty_crore=compliance_v2.get("dpdp", {}).get(
+            "total_max_penalty_crore", 0
+        ),
         dpdp_risk_level=compliance_v2.get("dpdp", {}).get("dpdp_risk_level", ""),
         gdpr_status=compliance_v2.get("gdpr", {}).get("gdpr_status", ""),
         pci_status=compliance_v2.get("pci_dss", {}).get("pci_status", ""),
         soc2_status=compliance_v2.get("soc2", {}).get("soc2_status", ""),
-        generated_at=datetime.now(timezone.utc).isoformat(),
+        generated_at=datetime.now(UTC).isoformat(),
     )
 
 
@@ -396,6 +446,7 @@ def _enrich_findings_with_risk_metrics(
     """
     try:
         from app.services.risk_quantification import enrich_finding_with_risk_metrics
+
         for f in all_findings:
             try:
                 enrich_finding_with_risk_metrics(
@@ -406,7 +457,9 @@ def _enrich_findings_with_risk_metrics(
                     in_kev=bool(f.get("cisa_kev") or f.get("in_cisa_kev")),
                 )
             except Exception as e:
-                logger.debug(f"Risk enrichment failed for {f.get('key', 'unknown')}: {e}")
+                logger.debug(
+                    f"Risk enrichment failed for {f.get('key', 'unknown')}: {e}"
+                )
     except ImportError:
         logger.debug("risk_quantification not available — skipping RRF/ALE enrichment")
     return all_findings
@@ -416,6 +469,7 @@ def _compute_portfolio_risk_summary(enriched_findings: list[dict]) -> dict:
     """Compute portfolio-level financial risk summary from enriched findings."""
     try:
         from app.services.risk_quantification import compute_portfolio_risk_summary
+
         return compute_portfolio_risk_summary(enriched_findings)
     except ImportError:
         pass
@@ -431,10 +485,14 @@ def _compute_portfolio_risk_summary(enriched_findings: list[dict]) -> dict:
         "kev_findings_count": 0,
         "epss_enriched_count": 0,
         "severity_adjusted_count": 0,
-        "p0_count": sum(1 for f in enriched_findings if f.get("severity") == "CRITICAL"),
+        "p0_count": sum(
+            1 for f in enriched_findings if f.get("severity") == "CRITICAL"
+        ),
         "p1_count": sum(1 for f in enriched_findings if f.get("severity") == "RED"),
         "p2_count": sum(1 for f in enriched_findings if f.get("severity") == "AMBER"),
-        "p3_count": sum(1 for f in enriched_findings if f.get("severity") in ("GREEN", "INFO")),
+        "p3_count": sum(
+            1 for f in enriched_findings if f.get("severity") in ("GREEN", "INFO")
+        ),
     }
 
 
@@ -452,6 +510,7 @@ def _compute_deep_compliance(
     # DPDP Engine
     try:
         from app.services.compliance.dpdp_engine import compute_dpdp_report
+
         dpdp = compute_dpdp_report(all_findings, raw_findings)
         compliance_v2["dpdp"] = dpdp.to_dict()
     except Exception as e:
@@ -461,6 +520,7 @@ def _compute_deep_compliance(
     # GDPR Engine
     try:
         from app.services.compliance.gdpr_engine import compute_gdpr_report
+
         gdpr = compute_gdpr_report(all_findings, raw_findings)
         compliance_v2["gdpr"] = gdpr.to_dict()
     except Exception as e:
@@ -470,6 +530,7 @@ def _compute_deep_compliance(
     # PCI DSS Engine
     try:
         from app.services.compliance.pci_engine import compute_pci_report
+
         pci = compute_pci_report(all_findings, raw_findings)
         compliance_v2["pci_dss"] = pci.to_dict()
     except Exception as e:
@@ -479,6 +540,7 @@ def _compute_deep_compliance(
     # SOC 2 Engine
     try:
         from app.services.compliance.soc2_engine import compute_soc2_report
+
         soc2 = compute_soc2_report(all_findings, raw_findings)
         compliance_v2["soc2"] = soc2.to_dict()
     except Exception as e:
@@ -572,44 +634,98 @@ def _merge_enterprise_findings(all_findings: list, enterprise_results: dict) -> 
     # OAST
     oast = enterprise_results.get("oast") or {}
     if oast.get("ssrf_confirmed"):
-        all_findings.append({"severity": "CRITICAL", "key": "oast_ssrf_confirmed",
-                              "check": "oast", "detail": "SSRF confirmed via OAST callback"})
+        all_findings.append(
+            {
+                "severity": "CRITICAL",
+                "key": "oast_ssrf_confirmed",
+                "check": "oast",
+                "detail": "SSRF confirmed via OAST callback",
+            }
+        )
     if oast.get("log4j_surface_detected"):
-        all_findings.append({"severity": "CRITICAL", "key": "oast_log4j_surface",
-                              "check": "oast", "detail": "Log4Shell surface detected"})
-    for xss in (oast.get("xss_surfaces_found") or []):
-        all_findings.append({"severity": "AMBER", "key": "oast_xss_surface",
-                              "check": "oast", "detail": xss.get("description", "XSS surface")})
+        all_findings.append(
+            {
+                "severity": "CRITICAL",
+                "key": "oast_log4j_surface",
+                "check": "oast",
+                "detail": "Log4Shell surface detected",
+            }
+        )
+    for xss in oast.get("xss_surfaces_found") or []:
+        all_findings.append(
+            {
+                "severity": "AMBER",
+                "key": "oast_xss_surface",
+                "check": "oast",
+                "detail": xss.get("description", "XSS surface"),
+            }
+        )
 
     # IAST
     iast = enterprise_results.get("iast") or {}
-    for st in (iast.get("stack_traces_found") or []):
-        all_findings.append({"severity": "CRITICAL", "key": "iast_stack_trace",
-                              "check": "iast", "detail": f"Stack trace in response: {st.get('framework', '')}"})
-    for db in (iast.get("db_errors_found") or []):
-        all_findings.append({"severity": "CRITICAL", "key": "iast_db_error",
-                              "check": "iast", "detail": f"DB error: {db.get('db_type', '')}"})
+    for st in iast.get("stack_traces_found") or []:
+        all_findings.append(
+            {
+                "severity": "CRITICAL",
+                "key": "iast_stack_trace",
+                "check": "iast",
+                "detail": f"Stack trace in response: {st.get('framework', '')}",
+            }
+        )
+    for db in iast.get("db_errors_found") or []:
+        all_findings.append(
+            {
+                "severity": "CRITICAL",
+                "key": "iast_db_error",
+                "check": "iast",
+                "detail": f"DB error: {db.get('db_type', '')}",
+            }
+        )
 
     # API security
     api = enterprise_results.get("api_security") or {}
-    for ep in (api.get("bola_vulnerable_endpoints") or []):
-        all_findings.append({"severity": "CRITICAL", "key": "api_bola",
-                              "check": "api_security", "detail": f"BOLA at {ep}"})
+    for ep in api.get("bola_vulnerable_endpoints") or []:
+        all_findings.append(
+            {
+                "severity": "CRITICAL",
+                "key": "api_bola",
+                "check": "api_security",
+                "detail": f"BOLA at {ep}",
+            }
+        )
 
     # Container
     container = enterprise_results.get("container") or {}
     if container.get("k8s_api_exposed"):
-        all_findings.append({"severity": "CRITICAL", "key": "container_k8s_api",
-                              "check": "container", "detail": "K8s API server exposed"})
+        all_findings.append(
+            {
+                "severity": "CRITICAL",
+                "key": "container_k8s_api",
+                "check": "container",
+                "detail": "K8s API server exposed",
+            }
+        )
     if container.get("docker_registry_exposed"):
-        all_findings.append({"severity": "RED", "key": "container_docker_registry",
-                              "check": "container", "detail": "Docker registry exposed"})
+        all_findings.append(
+            {
+                "severity": "RED",
+                "key": "container_docker_registry",
+                "check": "container",
+                "detail": "Docker registry exposed",
+            }
+        )
 
     # LLM
     llm = enterprise_results.get("llm_security") or {}
-    for key_item in (llm.get("api_keys_in_response") or []):
-        all_findings.append({"severity": "CRITICAL", "key": "llm_api_key_exposed",
-                              "check": "llm_security", "detail": f"{key_item.get('type', 'API key')} exposed"})
+    for key_item in llm.get("api_keys_in_response") or []:
+        all_findings.append(
+            {
+                "severity": "CRITICAL",
+                "key": "llm_api_key_exposed",
+                "check": "llm_security",
+                "detail": f"{key_item.get('type', 'API key')} exposed",
+            }
+        )
 
 
 def _compute_owasp_coverage(
@@ -619,7 +735,7 @@ def _compute_owasp_coverage(
 ) -> list[OWASPCoverage]:
     """Compute OWASP Top 10 coverage from all findings."""
     results = []
-    finding_keys = {f.get("key", "") for f in all_findings}
+    {f.get("key", "") for f in all_findings}
     # Findings use prefixed check names like 'ssl_no_ocsp', 'headers_many_missing', 'cors_wildcard_html'
     # Extract the module prefix from each finding's check field
     finding_checks = {f.get("check", "") for f in all_findings}
@@ -640,11 +756,10 @@ def _compute_owasp_coverage(
                 return True
         return False
 
-    for category_id, category_data in OWASP_TOP10_COVERAGE.items():
+    for _category_id, category_data in OWASP_TOP10_COVERAGE.items():
         # Check which modules for this category were actually tested
         modules_tested = [
-            m for m in category_data["modules"]
-            if _check_matches_module(m)
+            m for m in category_data["modules"] if _check_matches_module(m)
         ]
 
         # Count findings in this category — match by key prefix or check prefix
@@ -670,17 +785,18 @@ def _compute_owasp_coverage(
                 worst_severity = sev
                 break
 
-        results.append(OWASPCoverage(
-            id=category_data["id"],
-            name=category_data["name"],
-            covered=len(modules_tested) > 0,
-            findings_count=len(cat_findings),
-            severity=worst_severity if cat_findings else "INFO",
-            modules_tested=modules_tested,
-        ).__dict__)
+        results.append(
+            OWASPCoverage(
+                id=category_data["id"],
+                name=category_data["name"],
+                covered=len(modules_tested) > 0,
+                findings_count=len(cat_findings),
+                severity=worst_severity if cat_findings else "INFO",
+                modules_tested=modules_tested,
+            ).__dict__
+        )
 
     return results
-
 
 
 def _build_remediation_roadmap(
@@ -701,9 +817,14 @@ def _build_remediation_roadmap(
 
     # Quick win thresholds — findings that are fast to fix
     quick_win_keys = {
-        "headers_many_missing", "headers_some_missing", "dns_no_dmarc",
-        "dns_no_spf", "headers_no_https_redirect", "debug_code_in_production",
-        "dns_dmarc_not_enforced", "headers_hsts_short_max_age",
+        "headers_many_missing",
+        "headers_some_missing",
+        "dns_no_dmarc",
+        "dns_no_spf",
+        "headers_no_https_redirect",
+        "debug_code_in_production",
+        "dns_dmarc_not_enforced",
+        "headers_hsts_short_max_age",
     }
 
     for i, finding in enumerate(all_findings):
@@ -711,16 +832,18 @@ def _build_remediation_roadmap(
         key = finding.get("key", f"finding_{i}")
         weight = REMEDIATION_PRIORITY_WEIGHTS.get(severity, 1)
 
-        roadmap.append(RemediationItem(
-            priority=i + 1,
-            severity=severity,
-            title=finding.get("detail", finding.get("key", "Security Issue"))[:100],
-            finding_key=key,
-            module=finding.get("check", "unknown"),
-            estimated_fix_time=fix_times.get(severity, "variable"),
-            impact_score=weight,
-            quick_win=key in quick_win_keys,
-        ).__dict__)
+        roadmap.append(
+            RemediationItem(
+                priority=i + 1,
+                severity=severity,
+                title=finding.get("detail", finding.get("key", "Security Issue"))[:100],
+                finding_key=key,
+                module=finding.get("check", "unknown"),
+                estimated_fix_time=fix_times.get(severity, "variable"),
+                impact_score=weight,
+                quick_win=key in quick_win_keys,
+            ).__dict__
+        )
 
     # Sort by impact score (desc), then quick wins first within same score
     roadmap.sort(key=lambda x: (-x["impact_score"], not x["quick_win"]))
@@ -756,8 +879,12 @@ def _estimate_compliance_impact(
     elif framework == "pci":
         # PCI DSS — payment card industry
         pci_critical_keys = {
-            "ports_database_exposed", "ssl_invalid", "ssl_tls10_supported",
-            "ssl_heartbleed", "public_cloud_bucket", "cors_credentials_wildcard",
+            "ports_database_exposed",
+            "ssl_invalid",
+            "ssl_tls10_supported",
+            "ssl_heartbleed",
+            "public_cloud_bucket",
+            "cors_credentials_wildcard",
         }
         pci_relevant = [f for f in findings if f.get("key") in pci_critical_keys]
         impact = min(100, len(pci_relevant) * 20 + critical * 10)

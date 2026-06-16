@@ -1,14 +1,6 @@
-import asyncio
-import sys
-from app.services.scanner.dns_check import run
-
-async def main():
-    try:
-        res = await run("example.com")
-        print("SUCCESS:", res)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-
-if __name__ == "__main__":
-    asyncio.run(main())
+import dns.resolver
+resolver = dns.resolver.Resolver(configure=False)
+resolver.nameservers = ["8.8.8.8", "1.1.1.1", "8.8.4.4"]
+resolver.lifetime = 5.0
+resolver.timeout = 3.0
+print(resolver.resolve("www.bennett.edu.in", "A"))

@@ -11,15 +11,12 @@ no payload injection.
 import asyncio
 import json
 import logging
-import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 import httpx
 
-from app.config import settings
-from app.utils.subprocess_runner import run_safe_subprocess, is_tool_available
 from app.utils.nuclei_parser import parse_nuclei_output
+from app.utils.subprocess_runner import is_tool_available, run_safe_subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -27,20 +24,68 @@ USER_AGENT = "ShieldCheck-Scanner/2.0 (+https://shieldcheck.in/bot)"
 
 # Sensitive files to check (passive GET only)
 SENSITIVE_FILES = [
-    {"path": "/.git/config", "severity": "CRITICAL", "description": "Git repository config exposed — source code leak"},
-    {"path": "/.env", "severity": "CRITICAL", "description": "Environment file exposed — credentials leak"},
-    {"path": "/wp-config.php", "severity": "CRITICAL", "description": "WordPress config exposed — DB credentials leak"},
-    {"path": "/backup.zip", "severity": "CRITICAL", "description": "Backup archive exposed"},
-    {"path": "/backup.sql", "severity": "CRITICAL", "description": "Database dump exposed"},
-    {"path": "/dump.sql", "severity": "CRITICAL", "description": "Database dump exposed"},
-    {"path": "/.htaccess", "severity": "RED", "description": "Server config file exposed"},
-    {"path": "/phpinfo.php", "severity": "RED", "description": "PHP info page exposed — leaks server details"},
-    {"path": "/server-status", "severity": "RED", "description": "Apache server status exposed"},
-    {"path": "/adminer.php", "severity": "RED", "description": "Database admin tool exposed"},
-    {"path": "/phpmyadmin/", "severity": "RED", "description": "phpMyAdmin panel exposed"},
+    {
+        "path": "/.git/config",
+        "severity": "CRITICAL",
+        "description": "Git repository config exposed — source code leak",
+    },
+    {
+        "path": "/.env",
+        "severity": "CRITICAL",
+        "description": "Environment file exposed — credentials leak",
+    },
+    {
+        "path": "/wp-config.php",
+        "severity": "CRITICAL",
+        "description": "WordPress config exposed — DB credentials leak",
+    },
+    {
+        "path": "/backup.zip",
+        "severity": "CRITICAL",
+        "description": "Backup archive exposed",
+    },
+    {
+        "path": "/backup.sql",
+        "severity": "CRITICAL",
+        "description": "Database dump exposed",
+    },
+    {
+        "path": "/dump.sql",
+        "severity": "CRITICAL",
+        "description": "Database dump exposed",
+    },
+    {
+        "path": "/.htaccess",
+        "severity": "RED",
+        "description": "Server config file exposed",
+    },
+    {
+        "path": "/phpinfo.php",
+        "severity": "RED",
+        "description": "PHP info page exposed — leaks server details",
+    },
+    {
+        "path": "/server-status",
+        "severity": "RED",
+        "description": "Apache server status exposed",
+    },
+    {
+        "path": "/adminer.php",
+        "severity": "RED",
+        "description": "Database admin tool exposed",
+    },
+    {
+        "path": "/phpmyadmin/",
+        "severity": "RED",
+        "description": "phpMyAdmin panel exposed",
+    },
     {"path": "/robots.txt", "severity": "INFO", "description": "Robots.txt present"},
     {"path": "/sitemap.xml", "severity": "INFO", "description": "Sitemap present"},
-    {"path": "/.well-known/security.txt", "severity": "INFO", "description": "Security contact file present"},
+    {
+        "path": "/.well-known/security.txt",
+        "severity": "INFO",
+        "description": "Security contact file present",
+    },
 ]
 
 
@@ -48,13 +93,13 @@ SENSITIVE_FILES = [
 class MozillaObservatoryResult:
     """Result from Mozilla HTTP Observatory API."""
 
-    grade: Optional[str] = None
-    score: Optional[int] = None
+    grade: str | None = None
+    score: int | None = None
     tests_passed: int = 0
     tests_failed: int = 0
-    scan_id: Optional[int] = None
+    scan_id: int | None = None
     test_results: list[dict] = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -63,7 +108,7 @@ class NucleiScanResult:
 
     findings_count: int = 0
     findings: list[dict] = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -71,8 +116,8 @@ class TechFingerprint:
     """Technology detected via WhatWeb."""
 
     name: str
-    version: Optional[str] = None
-    category: Optional[str] = None
+    version: str | None = None
+    category: str | None = None
 
 
 @dataclass
@@ -83,7 +128,7 @@ class ExposedFile:
     severity: str
     description: str
     status_code: int
-    content_snippet: Optional[str] = None
+    content_snippet: str | None = None
 
 
 @dataclass
@@ -91,7 +136,7 @@ class WebAppResult:
     """Complete web application security scan result."""
 
     # Mozilla Observatory
-    observatory: Optional[dict] = None
+    observatory: dict | None = None
 
     # Nuclei findings
     nuclei_findings: list[dict] = field(default_factory=list)
@@ -111,7 +156,7 @@ class WebAppResult:
     has_security_txt: bool = False
 
     # Error
-    error: Optional[str] = None
+    error: str | None = None
 
 
 async def _check_mozilla_observatory(domain: str) -> MozillaObservatoryResult:
@@ -148,12 +193,16 @@ async def _check_mozilla_observatory(domain: str) -> MozillaObservatoryResult:
                     if test_res.status_code == 200:
                         tests = test_res.json()
                         for test_name, test_data in tests.items():
-                            result.test_results.append({
-                                "name": test_name,
-                                "pass": test_data.get("pass", False),
-                                "score_modifier": test_data.get("score_modifier", 0),
-                                "result": test_data.get("result", ""),
-                            })
+                            result.test_results.append(
+                                {
+                                    "name": test_name,
+                                    "pass": test_data.get("pass", False),
+                                    "score_modifier": test_data.get(
+                                        "score_modifier", 0
+                                    ),
+                                    "result": test_data.get("result", ""),
+                                }
+                            )
             elif state in ("PENDING", "STARTING", "RUNNING"):
                 # Wait and retry once
                 await asyncio.sleep(5)
@@ -184,15 +233,22 @@ async def _run_nuclei_scan(url: str) -> NucleiScanResult:
         # Build safe command — ONLY passive, safe template categories
         command = [
             "nuclei",
-            "-u", url,
-            "-t", "technologies/",
-            "-t", "exposures/",
-            "-t", "misconfigurations/",
-            "-t", "takeovers/",
-            "-severity", "info,low,medium,high",
+            "-u",
+            url,
+            "-t",
+            "technologies/",
+            "-t",
+            "exposures/",
+            "-t",
+            "misconfigurations/",
+            "-t",
+            "takeovers/",
+            "-severity",
+            "info,low,medium,high",
             "-no-interactsh",
             "-json",
-            "-timeout", "10",
+            "-timeout",
+            "10",
             "-silent",
         ]
 
@@ -253,11 +309,17 @@ async def _run_whatweb(url: str) -> list[TechFingerprint]:
                     if isinstance(plugin_data, dict):
                         version_list = plugin_data.get("version", [])
                         if version_list:
-                            version = version_list[0] if isinstance(version_list, list) else str(version_list)
-                    techs.append(TechFingerprint(
-                        name=plugin_name,
-                        version=version,
-                    ))
+                            version = (
+                                version_list[0]
+                                if isinstance(version_list, list)
+                                else str(version_list)
+                            )
+                    techs.append(
+                        TechFingerprint(
+                            name=plugin_name,
+                            version=version,
+                        )
+                    )
             except json.JSONDecodeError:
                 continue
 
@@ -270,7 +332,12 @@ async def _run_whatweb(url: str) -> list[TechFingerprint]:
 async def _check_sensitive_files(url: str) -> tuple[list[ExposedFile], dict]:
     """Check for publicly accessible sensitive files via GET requests."""
     exposed: list[ExposedFile] = []
-    info = {"has_robots_txt": False, "robots_disallowed": [], "has_sitemap": False, "has_security_txt": False}
+    info = {
+        "has_robots_txt": False,
+        "robots_disallowed": [],
+        "has_sitemap": False,
+        "has_security_txt": False,
+    }
 
     # Normalize base URL
     base_url = url.rstrip("/")
@@ -297,7 +364,10 @@ async def _check_sensitive_files(url: str) -> tuple[list[ExposedFile], dict]:
                     info["has_sitemap"] = True
                     continue
 
-                if file_info["path"] == "/.well-known/security.txt" and res.status_code == 200:
+                if (
+                    file_info["path"] == "/.well-known/security.txt"
+                    and res.status_code == 200
+                ):
                     info["has_security_txt"] = True
                     continue
 
@@ -306,13 +376,15 @@ async def _check_sensitive_files(url: str) -> tuple[list[ExposedFile], dict]:
                     content = res.text[:500]
                     # Basic validation to avoid false positives on custom 404 pages
                     if _is_likely_real_content(file_info["path"], content, res):
-                        exposed.append(ExposedFile(
-                            path=file_info["path"],
-                            severity=file_info["severity"],
-                            description=file_info["description"],
-                            status_code=res.status_code,
-                            content_snippet=content[:100],
-                        ))
+                        exposed.append(
+                            ExposedFile(
+                                path=file_info["path"],
+                                severity=file_info["severity"],
+                                description=file_info["description"],
+                                status_code=res.status_code,
+                                content_snippet=content[:100],
+                            )
+                        )
 
             except Exception:
                 continue
@@ -336,15 +408,24 @@ def _is_likely_real_content(path: str, content: str, response: httpx.Response) -
     if path == "/.git/config":
         return "[core]" in content or "[remote" in content
     if path == "/.env":
-        return "=" in content and any(k in content.upper() for k in ["DB_", "API_", "SECRET", "PASSWORD", "KEY"])
+        return "=" in content and any(
+            k in content.upper() for k in ["DB_", "API_", "SECRET", "PASSWORD", "KEY"]
+        )
     if path == "/phpinfo.php":
         return "phpinfo" in content.lower() or "PHP Version" in content
     if path.endswith(".sql"):
-        return any(kw in content.upper() for kw in ["CREATE TABLE", "INSERT INTO", "DROP TABLE", "-- MySQL"])
+        return any(
+            kw in content.upper()
+            for kw in ["CREATE TABLE", "INSERT INTO", "DROP TABLE", "-- MySQL"]
+        )
 
     # Default: accept if content type suggests file content (not HTML error page)
     content_type = response.headers.get("content-type", "").lower()
-    if "text/html" in content_type and path not in ("/phpmyadmin/", "/adminer.php", "/server-status"):
+    if "text/html" in content_type and path not in (
+        "/phpmyadmin/",
+        "/adminer.php",
+        "/server-status",
+    ):
         # HTML response for non-HTML files is likely a custom 404
         return False
 
@@ -363,7 +444,10 @@ async def run(url: str, domain: str) -> WebAppResult:
         sensitive_task = _check_sensitive_files(url)
 
         observatory, nuclei, techs, (exposed, info) = await asyncio.gather(
-            observatory_task, nuclei_task, whatweb_task, sensitive_task,
+            observatory_task,
+            nuclei_task,
+            whatweb_task,
+            sensitive_task,
             return_exceptions=False,
         )
 
@@ -401,7 +485,9 @@ async def run(url: str, domain: str) -> WebAppResult:
                 }
                 for f in exposed
             ]
-            result.critical_exposures = sum(1 for f in exposed if f.severity == "CRITICAL")
+            result.critical_exposures = sum(
+                1 for f in exposed if f.severity == "CRITICAL"
+            )
 
         # Informational
         if isinstance(info, dict):

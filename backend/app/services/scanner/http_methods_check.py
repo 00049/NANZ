@@ -5,10 +5,10 @@ Checks: OPTIONS Allow header for TRACE/CONNECT/DELETE/PUT/PATCH.
 Verifies TRACE reflection (XST attack) with actual TRACE request.
 """
 
-import httpx
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class HTTPMethodsResult:
     trace_enabled: bool = False
     trace_reflected: bool = False
     tested_endpoints: list[str] = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 async def run(url: str) -> HTTPMethodsResult:
@@ -41,7 +41,9 @@ async def run(url: str) -> HTTPMethodsResult:
             timeout=10.0,
             follow_redirects=True,
             verify=False,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
         ) as client:
 
             all_methods = set()
@@ -77,7 +79,7 @@ async def run(url: str) -> HTTPMethodsResult:
                     trace_res = await client.request(
                         "TRACE",
                         base_url,
-                        headers={"X-ShieldCheck-Test": "xst-verify-probe"}
+                        headers={"X-ShieldCheck-Test": "xst-verify-probe"},
                     )
                     if "xst-verify-probe" in trace_res.text:
                         result.trace_reflected = True

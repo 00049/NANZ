@@ -20,18 +20,20 @@ Rate limiting: 30 requests/hour per API key (enforced via middleware).
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from fastapi import Request
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.report import Report
-from app.services.ingestion.normalizer import normalize_findings, Format
-from app.services.ingestion.deduplicator import deduplicate_findings, compute_deduplication_stats
+from app.services.ingestion.deduplicator import (
+    compute_deduplication_stats,
+    deduplicate_findings,
+)
+from app.services.ingestion.normalizer import Format, normalize_findings
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,7 @@ router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 
 
 # ── Request / Response Models ─────────────────────────────────────────────────
+
 
 class IngestResponse(BaseModel):
     status: str
@@ -55,11 +58,11 @@ class GenericFindingItem(BaseModel):
     key: str
     severity: str = "AMBER"
     detail: str
-    title: Optional[str] = None
-    cve_id: Optional[str] = None
-    cvss_score: Optional[float] = None
-    affected_file: Optional[str] = None
-    fix_action: Optional[str] = None
+    title: str | None = None
+    cve_id: str | None = None
+    cvss_score: float | None = None
+    affected_file: str | None = None
+    fix_action: str | None = None
     references: list[str] = Field(default_factory=list)
 
 
@@ -71,9 +74,11 @@ class GenericIngestRequest(BaseModel):
 
 # ── Helper: Load & Update Report ─────────────────────────────────────────────
 
+
 async def _get_report(db: AsyncSession, scan_id: str) -> Report:
     """Fetch a report by scan_id or raise 404."""
     from sqlalchemy import select
+
     try:
         uid = UUID(scan_id)
     except ValueError:
@@ -84,7 +89,7 @@ async def _get_report(db: AsyncSession, scan_id: str) -> Report:
     if not report:
         raise HTTPException(
             status_code=404,
-            detail=f"Scan {scan_id} not found. Run a ShieldCheck scan first."
+            detail=f"Scan {scan_id} not found. Run a ShieldCheck scan first.",
         )
     return report
 
@@ -145,11 +150,14 @@ async def _save_ingested_findings(
 
 # ── SARIF Endpoint ────────────────────────────────────────────────────────────
 
+
 @router.post("/sarif", response_model=IngestResponse)
 async def ingest_sarif(
     scan_id: str = Query(..., description="Target scan UUID from ShieldCheck"),
-    source: str = Query("sarif", description="Scanner name for provenance (e.g. semgrep, codeql)"),
-    file: Optional[UploadFile] = File(None),
+    source: str = Query(
+        "sarif", description="Scanner name for provenance (e.g. semgrep, codeql)"
+    ),
+    file: UploadFile | None = File(None),
     request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
@@ -164,7 +172,9 @@ async def ingest_sarif(
         try:
             raw_data = json.loads(content)
         except json.JSONDecodeError as e:
-            raise HTTPException(status_code=422, detail=f"Invalid JSON in SARIF file: {e}")
+            raise HTTPException(
+                status_code=422, detail=f"Invalid JSON in SARIF file: {e}"
+            )
     elif request:
         try:
             raw_data = await request.json()
@@ -182,6 +192,7 @@ async def ingest_sarif(
 
 
 # ── Snyk Endpoint ─────────────────────────────────────────────────────────────
+
 
 @router.post("/snyk", response_model=IngestResponse)
 async def ingest_snyk(
@@ -203,6 +214,7 @@ async def ingest_snyk(
 
 # ── Trivy Endpoint ────────────────────────────────────────────────────────────
 
+
 @router.post("/trivy", response_model=IngestResponse)
 async def ingest_trivy(
     scan_id: str = Query(..., description="Target scan UUID from ShieldCheck"),
@@ -222,6 +234,7 @@ async def ingest_trivy(
 
 
 # ── Semgrep Endpoint ──────────────────────────────────────────────────────────
+
 
 @router.post("/semgrep", response_model=IngestResponse)
 async def ingest_semgrep(
@@ -243,6 +256,7 @@ async def ingest_semgrep(
 
 # ── Generic Endpoint ──────────────────────────────────────────────────────────
 
+
 @router.post("/generic", response_model=IngestResponse)
 async def ingest_generic(
     body: GenericIngestRequest,
@@ -254,13 +268,14 @@ async def ingest_generic(
     Accepts any list of findings with: key, severity, detail.
     Useful for custom scanner integrations or manual finding imports.
     """
-    raw_data = {
-        "findings": [f.model_dump() for f in body.findings]
-    }
-    return await _process_ingestion(db, body.scan_id, raw_data, Format.GENERIC, body.source)
+    raw_data = {"findings": [f.model_dump() for f in body.findings]}
+    return await _process_ingestion(
+        db, body.scan_id, raw_data, Format.GENERIC, body.source
+    )
 
 
 # ── Ingest Status Endpoint ────────────────────────────────────────────────────
+
 
 @router.get("/{scan_id}/status")
 async def get_ingestion_status(
@@ -291,6 +306,7 @@ async def get_ingestion_status(
 
 # ── Core Processing Logic ─────────────────────────────────────────────────────
 
+
 async def _process_ingestion(
     db: AsyncSession,
     scan_id: str,
@@ -315,13 +331,13 @@ async def _process_ingestion(
         logger.error(f"Normalization failed for {source}: {e}", exc_info=True)
         raise HTTPException(
             status_code=422,
-            detail=f"Failed to parse {format.value} results: {str(e)[:200]}"
+            detail=f"Failed to parse {format.value} results: {str(e)[:200]}",
         )
 
     if not ingested:
         raise HTTPException(
             status_code=422,
-            detail=f"No findings could be parsed from {source} output. Verify the format."
+            detail=f"No findings could be parsed from {source} output. Verify the format.",
         )
 
     # Deduplicate

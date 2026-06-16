@@ -11,12 +11,10 @@ PASSIVE CONSTRAINTS:
 """
 
 import asyncio
-import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 import httpx
 
@@ -52,7 +50,10 @@ API_KEY_PATTERNS = [
     (re.compile(r"sk-[a-zA-Z0-9]{48}", re.IGNORECASE), "OpenAI API key"),
     (re.compile(r"sk-ant-[a-zA-Z0-9\-]{40,}", re.IGNORECASE), "Anthropic API key"),
     (re.compile(r"AIza[0-9A-Za-z\-_]{35}", re.IGNORECASE), "Google API key"),
-    (re.compile(r"Bearer\s+sk-[a-zA-Z0-9]{20,}", re.IGNORECASE), "Bearer token (OpenAI style)"),
+    (
+        re.compile(r"Bearer\s+sk-[a-zA-Z0-9]{20,}", re.IGNORECASE),
+        "Bearer token (OpenAI style)",
+    ),
 ]
 
 # AI model identifier patterns in responses
@@ -69,23 +70,33 @@ SYSTEM_PROMPT_LEAK_PATTERNS = [
     re.compile(r"system prompt|system message|system instruction", re.IGNORECASE),
     re.compile(r"you are an AI|you are a helpful|you are an assistant", re.IGNORECASE),
     re.compile(r"your role is|your job is|your purpose is", re.IGNORECASE),
-    re.compile(r"instructions?:.*?(?:never|always|must|should)", re.IGNORECASE | re.DOTALL),
+    re.compile(
+        r"instructions?:.*?(?:never|always|must|should)", re.IGNORECASE | re.DOTALL
+    ),
     re.compile(r"<\|system\|>|<system>|<<SYS>>|\[INST\]", re.IGNORECASE),
 ]
 
 # Prompt injection surface indicators
 PROMPT_INJECTION_SURFACES = [
-    re.compile(r'<input[^>]+placeholder="[^"]*(?:ask|chat|message|prompt|query)[^"]*"', re.IGNORECASE),
-    re.compile(r'placeholder="[^"]*(?:ask me|chat|send a message)[^"]*"', re.IGNORECASE),
+    re.compile(
+        r'<input[^>]+placeholder="[^"]*(?:ask|chat|message|prompt|query)[^"]*"',
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r'placeholder="[^"]*(?:ask me|chat|send a message)[^"]*"', re.IGNORECASE
+    ),
     re.compile(r'data-testid="(?:chat|ai|llm|assistant)[^"]*"', re.IGNORECASE),
     re.compile(r'class="[^"]*(?:chatbox|chat-input|ai-input)[^"]*"', re.IGNORECASE),
 ]
 
 # Indirect prompt injection surfaces (content processed by LLM)
 INDIRECT_INJECTION_PATHS = [
-    "/api/summarize", "/api/analyze",
-    "/api/ai/summarize", "/api/search",
-    "/api/email/analyze", "/api/document/analyze",
+    "/api/summarize",
+    "/api/analyze",
+    "/api/ai/summarize",
+    "/api/search",
+    "/api/email/analyze",
+    "/api/document/analyze",
 ]
 
 # OWASP LLM Top 10 2025 IDs
@@ -128,7 +139,7 @@ class LLMSecurityResult:
     token_limit_enforced: bool = True
     findings: list = field(default_factory=list)
     probes_sent: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 async def run(url: str, domain: str) -> LLMSecurityResult:
@@ -191,13 +202,18 @@ async def _discover_llm_endpoints(
                 if resp.status_code not in (404, 410):
                     content_type = resp.headers.get("content-type", "")
                     # Must return JSON or be an API endpoint
-                    if resp.status_code in (200, 400, 405, 422) or "json" in content_type:
+                    if (
+                        resp.status_code in (200, 400, 405, 422)
+                        or "json" in content_type
+                    ):
                         active.append(f"{base}{path}")
             except Exception:
                 pass
             await asyncio.sleep(0.1)
 
-    await asyncio.gather(*[probe(p) for p in LLM_ENDPOINT_PATTERNS], return_exceptions=True)
+    await asyncio.gather(
+        *[probe(p) for p in LLM_ENDPOINT_PATTERNS], return_exceptions=True
+    )
     return active
 
 
@@ -216,19 +232,23 @@ async def _check_homepage_for_llm_surfaces(
             match = pattern.search(body)
             if match:
                 result.llm_surface_detected = True
-                result.prompt_injection_surfaces.append({
-                    "type": "ui_input",
-                    "matched": match.group(0)[:100],
-                    "severity": "AMBER",
-                    "detail": "Chat/AI input found in page — probe for prompt injection",
-                })
-                result.findings.append(LLMFinding(
-                    owasp_id="LLM01",
-                    owasp_name=OWASP_LLM_TOP_10["LLM01"],
-                    endpoint=url,
-                    severity="AMBER",
-                    detail="AI chat interface detected — prompt injection surface present",
-                ).__dict__)
+                result.prompt_injection_surfaces.append(
+                    {
+                        "type": "ui_input",
+                        "matched": match.group(0)[:100],
+                        "severity": "AMBER",
+                        "detail": "Chat/AI input found in page — probe for prompt injection",
+                    }
+                )
+                result.findings.append(
+                    LLMFinding(
+                        owasp_id="LLM01",
+                        owasp_name=OWASP_LLM_TOP_10["LLM01"],
+                        endpoint=url,
+                        severity="AMBER",
+                        detail="AI chat interface detected — prompt injection surface present",
+                    ).__dict__
+                )
 
     except Exception as exc:
         logger.debug(f"Homepage LLM scan error: {exc}")
@@ -256,8 +276,11 @@ async def _check_system_prompt_leakage(
                 result.probes_sent += 1
                 resp = await client.post(
                     endpoint,
-                    json={"message": probe_data["prompt"], "query": probe_data["prompt"],
-                          "prompt": probe_data["prompt"]},
+                    json={
+                        "message": probe_data["prompt"],
+                        "query": probe_data["prompt"],
+                        "prompt": probe_data["prompt"],
+                    },
                 )
                 if resp.status_code != 200:
                     continue
@@ -266,20 +289,24 @@ async def _check_system_prompt_leakage(
                 for pattern in SYSTEM_PROMPT_LEAK_PATTERNS:
                     if pattern.search(body):
                         result.system_prompt_leaked = True
-                        result.system_prompt_hints.append({
-                            "endpoint": endpoint,
-                            "probe": probe_data["prompt"],
-                            "matched_pattern": pattern.pattern[:50],
-                            "severity": "RED",
-                        })
-                        result.findings.append(LLMFinding(
-                            owasp_id="LLM07",
-                            owasp_name=OWASP_LLM_TOP_10["LLM07"],
-                            endpoint=endpoint,
-                            severity="RED",
-                            detail="System prompt content visible in LLM response — confidential instructions may be extracted",
-                            confirmed=True,
-                        ).__dict__)
+                        result.system_prompt_hints.append(
+                            {
+                                "endpoint": endpoint,
+                                "probe": probe_data["prompt"],
+                                "matched_pattern": pattern.pattern[:50],
+                                "severity": "RED",
+                            }
+                        )
+                        result.findings.append(
+                            LLMFinding(
+                                owasp_id="LLM07",
+                                owasp_name=OWASP_LLM_TOP_10["LLM07"],
+                                endpoint=endpoint,
+                                severity="RED",
+                                detail="System prompt content visible in LLM response — confidential instructions may be extracted",
+                                confirmed=True,
+                            ).__dict__
+                        )
 
             except Exception as exc:
                 logger.debug(f"System prompt probe error: {exc}")
@@ -309,14 +336,16 @@ async def _check_model_disclosure(
                         result.model_ids_disclosed.append(match)
 
             if result.model_ids_disclosed:
-                result.findings.append(LLMFinding(
-                    owasp_id="LLM02",
-                    owasp_name=OWASP_LLM_TOP_10["LLM02"],
-                    endpoint=endpoint,
-                    severity="GREEN",
-                    detail=f"AI model version disclosed: {', '.join(result.model_ids_disclosed[:3])} — attackers can target model-specific weaknesses",
-                    confirmed=True,
-                ).__dict__)
+                result.findings.append(
+                    LLMFinding(
+                        owasp_id="LLM02",
+                        owasp_name=OWASP_LLM_TOP_10["LLM02"],
+                        endpoint=endpoint,
+                        severity="GREEN",
+                        detail=f"AI model version disclosed: {', '.join(result.model_ids_disclosed[:3])} — attackers can target model-specific weaknesses",
+                        confirmed=True,
+                    ).__dict__
+                )
 
         except Exception as exc:
             logger.debug(f"Model disclosure check error: {exc}")
@@ -338,19 +367,23 @@ async def _check_api_key_exposure(
 
             for pattern, key_type in API_KEY_PATTERNS:
                 if pattern.search(body):
-                    result.api_keys_in_response.append({
-                        "type": key_type,
-                        "endpoint": endpoint,
-                        "severity": "CRITICAL",
-                    })
-                    result.findings.append(LLMFinding(
-                        owasp_id="LLM02",
-                        owasp_name=OWASP_LLM_TOP_10["LLM02"],
-                        endpoint=endpoint,
-                        severity="CRITICAL",
-                        detail=f"{key_type} exposed in API response — immediately rotate this key",
-                        confirmed=True,
-                    ).__dict__)
+                    result.api_keys_in_response.append(
+                        {
+                            "type": key_type,
+                            "endpoint": endpoint,
+                            "severity": "CRITICAL",
+                        }
+                    )
+                    result.findings.append(
+                        LLMFinding(
+                            owasp_id="LLM02",
+                            owasp_name=OWASP_LLM_TOP_10["LLM02"],
+                            endpoint=endpoint,
+                            severity="CRITICAL",
+                            detail=f"{key_type} exposed in API response — immediately rotate this key",
+                            confirmed=True,
+                        ).__dict__
+                    )
 
         except Exception as exc:
             logger.debug(f"API key check error: {exc}")
@@ -383,14 +416,16 @@ async def _check_rate_limiting(
         await asyncio.sleep(0.05)
 
     result.rate_limited = False
-    result.findings.append(LLMFinding(
-        owasp_id="LLM10",
-        owasp_name=OWASP_LLM_TOP_10["LLM10"],
-        endpoint=endpoint,
-        severity="RED",
-        detail="No rate limiting on LLM endpoint — unbounded consumption risk, cost explosion, and DoS possible",
-        confirmed=True,
-    ).__dict__)
+    result.findings.append(
+        LLMFinding(
+            owasp_id="LLM10",
+            owasp_name=OWASP_LLM_TOP_10["LLM10"],
+            endpoint=endpoint,
+            severity="RED",
+            detail="No rate limiting on LLM endpoint — unbounded consumption risk, cost explosion, and DoS possible",
+            confirmed=True,
+        ).__dict__
+    )
 
 
 async def _check_indirect_injection(
@@ -404,19 +439,23 @@ async def _check_indirect_injection(
             result.probes_sent += 1
             resp = await client.get(f"{base}{path}")
             if resp.status_code not in (404, 410):
-                result.indirect_injection_surfaces.append({
-                    "endpoint": f"{base}{path}",
-                    "status": resp.status_code,
-                    "severity": "RED",
-                    "detail": f"Content processing endpoint {path} — external content could inject into LLM context",
-                })
-                result.findings.append(LLMFinding(
-                    owasp_id="LLM01",
-                    owasp_name=OWASP_LLM_TOP_10["LLM01"],
-                    endpoint=f"{base}{path}",
-                    severity="RED",
-                    detail=f"Content processing endpoint detected at {path} — indirect prompt injection surface (untrusted content processed by LLM)",
-                ).__dict__)
+                result.indirect_injection_surfaces.append(
+                    {
+                        "endpoint": f"{base}{path}",
+                        "status": resp.status_code,
+                        "severity": "RED",
+                        "detail": f"Content processing endpoint {path} — external content could inject into LLM context",
+                    }
+                )
+                result.findings.append(
+                    LLMFinding(
+                        owasp_id="LLM01",
+                        owasp_name=OWASP_LLM_TOP_10["LLM01"],
+                        endpoint=f"{base}{path}",
+                        severity="RED",
+                        detail=f"Content processing endpoint detected at {path} — indirect prompt injection surface (untrusted content processed by LLM)",
+                    ).__dict__
+                )
         except Exception:
             pass
         await asyncio.sleep(0.1)
@@ -431,9 +470,13 @@ async def _check_excessive_agency(
     """Detect LLM agents with access to sensitive system functions."""
     # Probe for AI agent tool/action endpoints
     agent_paths = [
-        "/api/ai/execute", "/api/ai/run", "/api/agent",
-        "/api/ai/tools", "/api/ai/actions",
-        "/api/copilot/execute", "/api/ai/function",
+        "/api/ai/execute",
+        "/api/ai/run",
+        "/api/agent",
+        "/api/ai/tools",
+        "/api/ai/actions",
+        "/api/copilot/execute",
+        "/api/ai/function",
     ]
 
     for path in agent_paths:
@@ -442,20 +485,33 @@ async def _check_excessive_agency(
             resp = await client.get(f"{base}{path}")
             if resp.status_code not in (404, 410):
                 body = resp.text.lower()
-                if any(kw in body for kw in
-                       ["execute", "run command", "shell", "function_call", "tool_call", "actions"]):
-                    result.excessive_agency_indicators.append({
-                        "endpoint": f"{base}{path}",
-                        "severity": "RED",
-                        "detail": f"AI agent action/tool endpoint detected — excessive agency risk if insufficiently sandboxed",
-                    })
-                    result.findings.append(LLMFinding(
-                        owasp_id="LLM06",
-                        owasp_name=OWASP_LLM_TOP_10["LLM06"],
-                        endpoint=f"{base}{path}",
-                        severity="RED",
-                        detail=f"AI agent capability endpoint at {path} — LLM may execute actions with excessive privilege",
-                    ).__dict__)
+                if any(
+                    kw in body
+                    for kw in [
+                        "execute",
+                        "run command",
+                        "shell",
+                        "function_call",
+                        "tool_call",
+                        "actions",
+                    ]
+                ):
+                    result.excessive_agency_indicators.append(
+                        {
+                            "endpoint": f"{base}{path}",
+                            "severity": "RED",
+                            "detail": "AI agent action/tool endpoint detected — excessive agency risk if insufficiently sandboxed",
+                        }
+                    )
+                    result.findings.append(
+                        LLMFinding(
+                            owasp_id="LLM06",
+                            owasp_name=OWASP_LLM_TOP_10["LLM06"],
+                            endpoint=f"{base}{path}",
+                            severity="RED",
+                            detail=f"AI agent capability endpoint at {path} — LLM may execute actions with excessive privilege",
+                        ).__dict__
+                    )
         except Exception:
             pass
         await asyncio.sleep(0.1)

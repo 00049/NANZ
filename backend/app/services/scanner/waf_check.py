@@ -6,11 +6,11 @@ Imperva/Incapsula, Azure Front Door, Nginx proxy, Vercel, Netlify.
 Result is used by orchestrator to adjust severity of header findings.
 """
 
-import httpx
 import logging
-import dns.resolver
 from dataclasses import dataclass, field
-from typing import Optional
+
+import dns.resolver
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -79,55 +79,66 @@ SERVER_PATTERNS = {
 @dataclass
 class WAFResult:
     waf_detected: bool = False
-    waf_provider: Optional[str] = None
+    waf_provider: str | None = None
     cdn_detected: bool = False
-    cdn_provider: Optional[str] = None
+    cdn_provider: str | None = None
     is_behind_proxy: bool = False
     detection_method: str = ""
     all_detections: list[dict] = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 async def _check_headers(url: str) -> list[dict]:
     """Detect WAF/CDN from response headers."""
     detections = []
     try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, verify=False) as client:
-            res = await client.get(url, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            })
+        async with httpx.AsyncClient(
+            timeout=8.0, follow_redirects=True, verify=False
+        ) as client:
+            res = await client.get(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                },
+            )
 
             response_headers = {k.lower(): v for k, v in res.headers.items()}
 
             # Check specific header signatures
             for header_key, (provider, detection_type) in HEADER_SIGNATURES.items():
                 if header_key in response_headers:
-                    detections.append({
-                        "provider": provider,
-                        "type": detection_type,
-                        "method": f"header:{header_key}",
-                        "value": response_headers[header_key][:100],
-                    })
+                    detections.append(
+                        {
+                            "provider": provider,
+                            "type": detection_type,
+                            "method": f"header:{header_key}",
+                            "value": response_headers[header_key][:100],
+                        }
+                    )
 
             # Check Server header patterns
             server = response_headers.get("server", "").lower()
             for pattern, (provider, detection_type) in SERVER_PATTERNS.items():
                 if pattern in server:
-                    detections.append({
-                        "provider": provider,
-                        "type": detection_type,
-                        "method": f"server:{pattern}",
-                    })
+                    detections.append(
+                        {
+                            "provider": provider,
+                            "type": detection_type,
+                            "method": f"server:{pattern}",
+                        }
+                    )
 
             # Check for Via header (proxy indicator)
             via = response_headers.get("via", "")
             if via:
-                detections.append({
-                    "provider": "Proxy",
-                    "type": "proxy",
-                    "method": "header:via",
-                    "value": via[:100],
-                })
+                detections.append(
+                    {
+                        "provider": "Proxy",
+                        "type": "proxy",
+                        "method": "header:via",
+                        "value": via[:100],
+                    }
+                )
 
     except Exception as e:
         logger.debug(f"WAF header check error: {e}")
@@ -144,18 +155,25 @@ def _check_cname(domain: str) -> list[dict]:
             cname_target = str(rdata.target).lower().rstrip(".")
             for pattern, provider in CNAME_PATTERNS.items():
                 if pattern in cname_target:
-                    detections.append({
-                        "provider": provider,
-                        "type": "cdn",
-                        "method": f"cname:{cname_target}",
-                    })
-    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers, Exception):
+                    detections.append(
+                        {
+                            "provider": provider,
+                            "type": "cdn",
+                            "method": f"cname:{cname_target}",
+                        }
+                    )
+    except (
+        dns.resolver.NoAnswer,
+        dns.resolver.NXDOMAIN,
+        dns.resolver.NoNameservers,
+        Exception,
+    ):
         pass
 
     return detections
 
 
-async def _check_asn(ip_address: Optional[str]) -> list[dict]:
+async def _check_asn(ip_address: str | None) -> list[dict]:
     """Detect CDN from IP ASN lookup."""
     detections = []
     if not ip_address:
@@ -170,22 +188,26 @@ async def _check_asn(ip_address: Optional[str]) -> list[dict]:
                 org = data.get("org", "")
 
                 if asn in CDN_ASN_MAP:
-                    detections.append({
-                        "provider": CDN_ASN_MAP[asn],
-                        "type": "cdn",
-                        "method": f"asn:{asn}",
-                        "org": org,
-                    })
+                    detections.append(
+                        {
+                            "provider": CDN_ASN_MAP[asn],
+                            "type": "cdn",
+                            "method": f"asn:{asn}",
+                            "org": org,
+                        }
+                    )
                 else:
                     # Check org name for CDN keywords
                     org_lower = org.lower()
                     for keyword, provider in CNAME_PATTERNS.items():
                         if keyword in org_lower:
-                            detections.append({
-                                "provider": provider,
-                                "type": "cdn",
-                                "method": f"asn_org:{org}",
-                            })
+                            detections.append(
+                                {
+                                    "provider": provider,
+                                    "type": "cdn",
+                                    "method": f"asn_org:{org}",
+                                }
+                            )
                             break
     except Exception as e:
         logger.debug(f"WAF ASN check error: {e}")
@@ -193,7 +215,7 @@ async def _check_asn(ip_address: Optional[str]) -> list[dict]:
     return detections
 
 
-async def run(url: str, domain: str, ip_address: Optional[str] = None) -> WAFResult:
+async def run(url: str, domain: str, ip_address: str | None = None) -> WAFResult:
     """
     Detect WAF and CDN presence using headers, CNAME, and ASN analysis.
 
@@ -216,8 +238,12 @@ async def run(url: str, domain: str, ip_address: Optional[str] = None) -> WAFRes
         all_detections.extend(asn_detections)
 
         # Determine WAF and CDN providers
-        waf_providers = [d["provider"] for d in all_detections if d.get("type") == "waf"]
-        cdn_providers = [d["provider"] for d in all_detections if d.get("type") == "cdn"]
+        waf_providers = [
+            d["provider"] for d in all_detections if d.get("type") == "waf"
+        ]
+        cdn_providers = [
+            d["provider"] for d in all_detections if d.get("type") == "cdn"
+        ]
         proxy_detected = any(d.get("type") == "proxy" for d in all_detections)
 
         waf_detected = len(waf_providers) > 0

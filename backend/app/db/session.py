@@ -1,8 +1,4 @@
 from collections.abc import AsyncGenerator
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-
-from app.config import settings
-import app.models  # noqa: F401
 
 # NOTE: Supabase has TWO pooler ports:
 #   - Port 6543 = Transaction mode (pgBouncer) — does NOT support prepared statements
@@ -13,8 +9,12 @@ import app.models  # noqa: F401
 # This error occurs when the asyncpg connection pool recycles connections and
 # tries to re-register a cached prepared statement that pgBouncer already dropped.
 # Setting cache to 0 is safe — it just disables client-side statement caching.
-
 from uuid import uuid4
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+import app.models  # noqa: F401
+from app.config import settings
 
 engine = create_async_engine(
     settings.DATABASE_URL,

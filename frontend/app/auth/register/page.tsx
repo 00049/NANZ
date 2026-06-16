@@ -25,9 +25,7 @@ export default function RegisterPage() {
       useAuthStore.getState().setToken(res.token.access_token);
       useAuthStore.getState().setUser(res.user);
       
-      const searchParams = new URLSearchParams(window.location.search);
-      const redirect = searchParams.get("redirect") || "/dashboard";
-      window.location.href = redirect;
+      window.location.href = "/dashboard";
     } catch (err: any) {
       let msg = err.message;
       if (msg === "Failed to fetch") {

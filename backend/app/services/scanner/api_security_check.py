@@ -13,12 +13,10 @@ PASSIVE CONSTRAINTS:
 """
 
 import asyncio
-import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 import httpx
 
@@ -30,55 +28,88 @@ MAX_CONCURRENT = 4
 # ── API endpoint discovery paths ────────────────────────────────────────────────
 
 API_BASE_PATHS = [
-    "/api", "/api/v1", "/api/v2", "/api/v3",
-    "/v1", "/v2", "/v3", "/rest",
-    "/graphql", "/query",
+    "/api",
+    "/api/v1",
+    "/api/v2",
+    "/api/v3",
+    "/v1",
+    "/v2",
+    "/v3",
+    "/rest",
+    "/graphql",
+    "/query",
 ]
 
 OPENAPI_SPEC_PATHS = [
-    "/swagger.json", "/openapi.json", "/api-docs",
-    "/swagger/v1/swagger.json", "/api/swagger.json",
-    "/api/openapi.json", "/api/docs/swagger.json",
-    "/v1/api-docs", "/v2/api-docs",
+    "/swagger.json",
+    "/openapi.json",
+    "/api-docs",
+    "/swagger/v1/swagger.json",
+    "/api/swagger.json",
+    "/api/openapi.json",
+    "/api/docs/swagger.json",
+    "/v1/api-docs",
+    "/v2/api-docs",
 ]
 
 SWAGGER_UI_PATHS = [
-    "/swagger-ui", "/swagger-ui.html", "/redoc",
-    "/api/docs", "/api/swagger", "/docs",
+    "/swagger-ui",
+    "/swagger-ui.html",
+    "/redoc",
+    "/api/docs",
+    "/api/swagger",
+    "/docs",
 ]
 
 ADMIN_API_PATHS = [
-    "/api/admin", "/api/admin/users", "/api/management",
-    "/api/internal", "/admin/api", "/api/config",
-    "/api/system", "/api/control", "/api/ops",
+    "/api/admin",
+    "/api/admin/users",
+    "/api/management",
+    "/api/internal",
+    "/admin/api",
+    "/api/config",
+    "/api/system",
+    "/api/control",
+    "/api/ops",
 ]
 
 DEBUG_PATHS = [
-    "/api/debug", "/api/test", "/api/health/detailed",
-    "/api/status", "/debug", "/api/ping/detailed",
-    "/health/details", "/metrics", "/actuator/env",
-    "/actuator/beans", "/actuator/health",
+    "/api/debug",
+    "/api/test",
+    "/api/health/detailed",
+    "/api/status",
+    "/debug",
+    "/api/ping/detailed",
+    "/health/details",
+    "/metrics",
+    "/actuator/env",
+    "/actuator/beans",
+    "/actuator/health",
 ]
 
 SENSITIVE_FLOW_PATHS = [
-    "/api/forgot-password", "/api/reset-password",
-    "/api/register", "/api/signup", "/api/auth/register",
-    "/api/checkout", "/api/purchase", "/api/payment",
-    "/api/transfer", "/api/withdraw",
+    "/api/forgot-password",
+    "/api/reset-password",
+    "/api/register",
+    "/api/signup",
+    "/api/auth/register",
+    "/api/checkout",
+    "/api/purchase",
+    "/api/payment",
+    "/api/transfer",
+    "/api/withdraw",
 ]
 
 # JWT pattern: three base64url segments separated by dots
-JWT_PATTERN = re.compile(
-    r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"
-)
+JWT_PATTERN = re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
 
 
 @dataclass
 class APIFinding:
-    api_risk_id: str    # e.g. "API1", "API2"
+    api_risk_id: str  # e.g. "API1", "API2"
     api_risk_name: str
     endpoint: str
-    severity: str       # CRITICAL / RED / AMBER
+    severity: str  # CRITICAL / RED / AMBER
     detail: str
     method: str = "GET"
     confirmed: bool = False
@@ -99,7 +130,7 @@ class APISecurityResult:
     debug_endpoints_exposed: list = field(default_factory=list)
     sensitive_endpoints_no_rate_limit: list = field(default_factory=list)
     owasp_api_findings: list = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 async def run(url: str, domain: str) -> APISecurityResult:
@@ -112,8 +143,10 @@ async def run(url: str, domain: str) -> APISecurityResult:
             timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=5.0),
             follow_redirects=True,
             verify=False,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; SecurityAudit/1.0)",
-                     "Accept": "application/json, text/html, */*"},
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; SecurityAudit/1.0)",
+                "Accept": "application/json, text/html, */*",
+            },
             limits=httpx.Limits(max_connections=MAX_CONCURRENT),
         ) as client:
 
@@ -142,6 +175,7 @@ async def run(url: str, domain: str) -> APISecurityResult:
 
 # ── API1: BOLA / IDOR ───────────────────────────────────────────────────────────
 
+
 async def _check_bola(
     client: httpx.AsyncClient,
     base: str,
@@ -169,19 +203,23 @@ async def _check_bola(
                 resp2 = await client.get(new_endpoint)
                 if resp2.status_code in (200, 201) and len(resp2.text) > 50:
                     result.bola_vulnerable_endpoints.append(endpoint)
-                    result.owasp_api_findings.append(APIFinding(
-                        api_risk_id="API1",
-                        api_risk_name="Broken Object Level Authorization",
-                        endpoint=endpoint,
-                        severity="CRITICAL",
-                        detail=f"Sequential object access returns data — BOLA/IDOR confirmed",
-                        confirmed=True,
-                    ).__dict__)
+                    result.owasp_api_findings.append(
+                        APIFinding(
+                            api_risk_id="API1",
+                            api_risk_name="Broken Object Level Authorization",
+                            endpoint=endpoint,
+                            severity="CRITICAL",
+                            detail="Sequential object access returns data — BOLA/IDOR confirmed",
+                            confirmed=True,
+                        ).__dict__
+                    )
             except Exception:
                 pass
             await asyncio.sleep(0.3)
 
-    await asyncio.gather(*[test_bola(ep) for ep in id_endpoints[:5]], return_exceptions=True)
+    await asyncio.gather(
+        *[test_bola(ep) for ep in id_endpoints[:5]], return_exceptions=True
+    )
 
 
 def _increment_id(match: re.Match) -> str:
@@ -192,6 +230,7 @@ def _increment_id(match: re.Match) -> str:
 
 # ── API2: Broken Authentication ─────────────────────────────────────────────────
 
+
 async def _check_api_auth(
     client: httpx.AsyncClient,
     base: str,
@@ -199,8 +238,11 @@ async def _check_api_auth(
     result: APISecurityResult,
 ) -> None:
     """Test API endpoints for authentication requirements."""
-    test_endpoints = [ep for ep in discovered
-                      if any(kw in ep for kw in ["/user", "/account", "/profile", "/me", "/data"])]
+    test_endpoints = [
+        ep
+        for ep in discovered
+        if any(kw in ep for kw in ["/user", "/account", "/profile", "/me", "/data"])
+    ]
 
     # Limit to first 5 to avoid too many requests
     for endpoint in test_endpoints[:5]:
@@ -209,24 +251,28 @@ async def _check_api_auth(
             resp = await client.get(f"{base}{endpoint}")
             if resp.status_code == 200 and len(resp.text) > 100:
                 result.auth_bypass_endpoints.append(endpoint)
-                result.owasp_api_findings.append(APIFinding(
-                    api_risk_id="API2",
-                    api_risk_name="Broken Authentication",
-                    endpoint=endpoint,
-                    severity="CRITICAL",
-                    detail="Endpoint returns data without any Authorization header",
-                    confirmed=True,
-                ).__dict__)
+                result.owasp_api_findings.append(
+                    APIFinding(
+                        api_risk_id="API2",
+                        api_risk_name="Broken Authentication",
+                        endpoint=endpoint,
+                        severity="CRITICAL",
+                        detail="Endpoint returns data without any Authorization header",
+                        confirmed=True,
+                    ).__dict__
+                )
 
             # Check for API key in URL (bad practice)
             if "api_key" in resp.url.query or "apikey" in resp.url.query:
-                result.owasp_api_findings.append(APIFinding(
-                    api_risk_id="API2",
-                    api_risk_name="Broken Authentication",
-                    endpoint=endpoint,
-                    severity="RED",
-                    detail="API key passed in URL query string — will be logged in server logs",
-                ).__dict__)
+                result.owasp_api_findings.append(
+                    APIFinding(
+                        api_risk_id="API2",
+                        api_risk_name="Broken Authentication",
+                        endpoint=endpoint,
+                        severity="RED",
+                        detail="API key passed in URL query string — will be logged in server logs",
+                    ).__dict__
+                )
 
         except Exception as exc:
             logger.debug(f"Auth check {endpoint}: {exc}")
@@ -235,6 +281,7 @@ async def _check_api_auth(
 
 # ── API4: Rate Limiting ─────────────────────────────────────────────────────────
 
+
 async def _check_rate_limiting(
     client: httpx.AsyncClient,
     base: str,
@@ -242,14 +289,17 @@ async def _check_rate_limiting(
 ) -> None:
     """Test rate limiting by sending 20 rapid requests to key endpoints."""
     endpoints_to_test = [
-        "/api/auth/login", "/api/login", "/login",
-        "/api/auth", "/api/v1/auth/login",
+        "/api/auth/login",
+        "/api/login",
+        "/login",
+        "/api/auth",
+        "/api/v1/auth/login",
     ]
 
     for endpoint in endpoints_to_test:
         try:
             rate_limited = False
-            for i in range(20):
+            for _i in range(20):
                 resp = await client.get(f"{base}{endpoint}")
                 if resp.status_code == 429:
                     rate_limited = True
@@ -258,18 +308,21 @@ async def _check_rate_limiting(
 
             if not rate_limited:
                 result.missing_rate_limiting.append(endpoint)
-                result.owasp_api_findings.append(APIFinding(
-                    api_risk_id="API4",
-                    api_risk_name="Unrestricted Resource Consumption",
-                    endpoint=endpoint,
-                    severity="RED",
-                    detail=f"No rate limiting detected after 20 rapid requests to {endpoint}",
-                ).__dict__)
+                result.owasp_api_findings.append(
+                    APIFinding(
+                        api_risk_id="API4",
+                        api_risk_name="Unrestricted Resource Consumption",
+                        endpoint=endpoint,
+                        severity="RED",
+                        detail=f"No rate limiting detected after 20 rapid requests to {endpoint}",
+                    ).__dict__
+                )
         except Exception:
             pass
 
 
 # ── API5: BFLA — Admin Endpoints ────────────────────────────────────────────────
+
 
 async def _check_admin_endpoints(
     client: httpx.AsyncClient,
@@ -285,32 +338,39 @@ async def _check_admin_endpoints(
                 resp = await client.get(f"{base}{path}")
                 if resp.status_code == 200:
                     result.admin_endpoints_found.append(path)
-                    result.owasp_api_findings.append(APIFinding(
-                        api_risk_id="API5",
-                        api_risk_name="Broken Function Level Authorization",
-                        endpoint=path,
-                        severity="CRITICAL",
-                        detail=f"Admin endpoint returns 200 without authentication",
-                        confirmed=True,
-                    ).__dict__)
+                    result.owasp_api_findings.append(
+                        APIFinding(
+                            api_risk_id="API5",
+                            api_risk_name="Broken Function Level Authorization",
+                            endpoint=path,
+                            severity="CRITICAL",
+                            detail="Admin endpoint returns 200 without authentication",
+                            confirmed=True,
+                        ).__dict__
+                    )
                 elif resp.status_code == 403:
                     # 403 means it exists but is blocked — still flag it
                     result.admin_endpoints_found.append(path)
-                    result.owasp_api_findings.append(APIFinding(
-                        api_risk_id="API5",
-                        api_risk_name="Broken Function Level Authorization",
-                        endpoint=path,
-                        severity="RED",
-                        detail=f"Admin endpoint confirmed (403 = exists but forbidden)",
-                    ).__dict__)
+                    result.owasp_api_findings.append(
+                        APIFinding(
+                            api_risk_id="API5",
+                            api_risk_name="Broken Function Level Authorization",
+                            endpoint=path,
+                            severity="RED",
+                            detail="Admin endpoint confirmed (403 = exists but forbidden)",
+                        ).__dict__
+                    )
             except Exception:
                 pass
             await asyncio.sleep(0.1)
 
-    await asyncio.gather(*[check_admin(p) for p in ADMIN_API_PATHS], return_exceptions=True)
+    await asyncio.gather(
+        *[check_admin(p) for p in ADMIN_API_PATHS], return_exceptions=True
+    )
 
 
 # ── API8: Security Misconfiguration ────────────────────────────────────────────
+
 
 async def _check_api_misconfiguration(
     client: httpx.AsyncClient,
@@ -327,16 +387,28 @@ async def _check_api_misconfiguration(
                 if resp.status_code == 200:
                     content = resp.text[:2000]
                     # Check if it exposes internal info
-                    if any(kw in content.lower() for kw in
-                           ["version", "build", "environment", "config", "secret", "password", "key"]):
+                    if any(
+                        kw in content.lower()
+                        for kw in [
+                            "version",
+                            "build",
+                            "environment",
+                            "config",
+                            "secret",
+                            "password",
+                            "key",
+                        ]
+                    ):
                         result.debug_endpoints_exposed.append(path)
-                        result.owasp_api_findings.append(APIFinding(
-                            api_risk_id="API8",
-                            api_risk_name="Security Misconfiguration",
-                            endpoint=path,
-                            severity="AMBER",
-                            detail=f"Debug/health endpoint exposes internal information",
-                        ).__dict__)
+                        result.owasp_api_findings.append(
+                            APIFinding(
+                                api_risk_id="API8",
+                                api_risk_name="Security Misconfiguration",
+                                endpoint=path,
+                                severity="AMBER",
+                                detail="Debug/health endpoint exposes internal information",
+                            ).__dict__
+                        )
             except Exception:
                 pass
             await asyncio.sleep(0.1)
@@ -355,21 +427,25 @@ async def _check_api_misconfiguration(
                 await asyncio.sleep(0.1)
 
             if not rate_limited and any(
-                kw in path for kw in ["forgot-password", "reset", "register", "checkout"]
+                kw in path
+                for kw in ["forgot-password", "reset", "register", "checkout"]
             ):
                 result.sensitive_endpoints_no_rate_limit.append(path)
-                result.owasp_api_findings.append(APIFinding(
-                    api_risk_id="API6",
-                    api_risk_name="Unrestricted Access to Sensitive Business Flows",
-                    endpoint=path,
-                    severity="RED",
-                    detail=f"Sensitive flow endpoint has no rate limiting — vulnerable to abuse",
-                ).__dict__)
+                result.owasp_api_findings.append(
+                    APIFinding(
+                        api_risk_id="API6",
+                        api_risk_name="Unrestricted Access to Sensitive Business Flows",
+                        endpoint=path,
+                        severity="RED",
+                        detail="Sensitive flow endpoint has no rate limiting — vulnerable to abuse",
+                    ).__dict__
+                )
         except Exception:
             pass
 
 
 # ── API9: Inventory — Multiple Versions ────────────────────────────────────────
+
 
 async def _check_api_versions(
     client: httpx.AsyncClient,
@@ -391,16 +467,19 @@ async def _check_api_versions(
 
     result.api_versions = list(set(live_versions))
     if len(live_versions) > 1:
-        result.owasp_api_findings.append(APIFinding(
-            api_risk_id="API9",
-            api_risk_name="Improper Inventory Management",
-            endpoint=", ".join(live_versions),
-            severity="AMBER",
-            detail=f"Multiple API versions active simultaneously: {', '.join(live_versions)} — older versions may lack security patches",
-        ).__dict__)
+        result.owasp_api_findings.append(
+            APIFinding(
+                api_risk_id="API9",
+                api_risk_name="Improper Inventory Management",
+                endpoint=", ".join(live_versions),
+                severity="AMBER",
+                detail=f"Multiple API versions active simultaneously: {', '.join(live_versions)} — older versions may lack security patches",
+            ).__dict__
+        )
 
 
 # ── OpenAPI Spec Exposure ───────────────────────────────────────────────────────
+
 
 async def _check_openapi_exposure(
     client: httpx.AsyncClient,
@@ -421,13 +500,15 @@ async def _check_openapi_exposure(
                         paths = spec.get("paths", {})
                         for ep_path in list(paths.keys())[:50]:
                             result.endpoints_discovered.append(ep_path)
-                        result.owasp_api_findings.append(APIFinding(
-                            api_risk_id="API8",
-                            api_risk_name="Security Misconfiguration",
-                            endpoint=path,
-                            severity="AMBER",
-                            detail=f"OpenAPI/Swagger spec publicly exposed at {path} — reveals full API surface",
-                        ).__dict__)
+                        result.owasp_api_findings.append(
+                            APIFinding(
+                                api_risk_id="API8",
+                                api_risk_name="Security Misconfiguration",
+                                endpoint=path,
+                                severity="AMBER",
+                                detail=f"OpenAPI/Swagger spec publicly exposed at {path} — reveals full API surface",
+                            ).__dict__
+                        )
                         break
                 except Exception:
                     pass
@@ -440,19 +521,22 @@ async def _check_openapi_exposure(
             resp = await client.get(f"{base}{path}")
             if resp.status_code == 200 and "swagger" in resp.text.lower():
                 result.swagger_ui_exposed = True
-                result.owasp_api_findings.append(APIFinding(
-                    api_risk_id="API8",
-                    api_risk_name="Security Misconfiguration",
-                    endpoint=path,
-                    severity="AMBER",
-                    detail=f"Swagger UI accessible in production at {path}",
-                ).__dict__)
+                result.owasp_api_findings.append(
+                    APIFinding(
+                        api_risk_id="API8",
+                        api_risk_name="Security Misconfiguration",
+                        endpoint=path,
+                        severity="AMBER",
+                        detail=f"Swagger UI accessible in production at {path}",
+                    ).__dict__
+                )
                 break
         except Exception:
             pass
 
 
 # ── Endpoint Discovery ─────────────────────────────────────────────────────────
+
 
 async def _discover_api_endpoints(
     client: httpx.AsyncClient,
@@ -474,9 +558,16 @@ async def _discover_api_endpoints(
             await asyncio.sleep(0.05)
 
     probe_paths = API_BASE_PATHS + [
-        "/api/users", "/api/user", "/api/me", "/api/profile",
-        "/api/products", "/api/orders", "/api/items",
-        "/api/auth", "/api/token", "/api/auth/login",
+        "/api/users",
+        "/api/user",
+        "/api/me",
+        "/api/profile",
+        "/api/products",
+        "/api/orders",
+        "/api/items",
+        "/api/auth",
+        "/api/token",
+        "/api/auth/login",
     ]
 
     await asyncio.gather(*[check_path(p) for p in probe_paths], return_exceptions=True)

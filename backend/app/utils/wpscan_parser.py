@@ -8,7 +8,6 @@ user enumeration results, and exposed files.
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +17,10 @@ class WPVulnerability:
     """A single WordPress vulnerability."""
 
     title: str
-    vuln_type: Optional[str] = None
-    cve: Optional[str] = None
-    cvss_score: Optional[float] = None
-    fixed_in: Optional[str] = None
+    vuln_type: str | None = None
+    cve: str | None = None
+    cvss_score: float | None = None
+    fixed_in: str | None = None
     references: list[str] = field(default_factory=list)
 
 
@@ -30,8 +29,8 @@ class WPPlugin:
     """A detected WordPress plugin with vulnerabilities."""
 
     name: str
-    version: Optional[str] = None
-    latest_version: Optional[str] = None
+    version: str | None = None
+    latest_version: str | None = None
     outdated: bool = False
     vulnerabilities: list[WPVulnerability] = field(default_factory=list)
 
@@ -40,17 +39,17 @@ class WPPlugin:
 class WPScanResult:
     """Complete parsed WPScan result."""
 
-    wp_version: Optional[str] = None
-    wp_version_status: Optional[str] = None  # "latest", "outdated", "insecure"
-    main_theme: Optional[str] = None
-    theme_version: Optional[str] = None
+    wp_version: str | None = None
+    wp_version_status: str | None = None  # "latest", "outdated", "insecure"
+    main_theme: str | None = None
+    theme_version: str | None = None
     plugins: list[WPPlugin] = field(default_factory=list)
     users_found: list[str] = field(default_factory=list)
     vulnerabilities: list[WPVulnerability] = field(default_factory=list)
     interesting_findings: list[str] = field(default_factory=list)
     readme_exposed: bool = False
     license_exposed: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
 
 def parse_wpscan_output(raw_output: str) -> WPScanResult:
@@ -93,7 +92,11 @@ def parse_wpscan_output(raw_output: str) -> WPScanResult:
     main_theme = data.get("main_theme", {})
     if main_theme:
         result.main_theme = main_theme.get("slug")
-        result.theme_version = main_theme.get("version", {}).get("number") if isinstance(main_theme.get("version"), dict) else main_theme.get("version")
+        result.theme_version = (
+            main_theme.get("version", {}).get("number")
+            if isinstance(main_theme.get("version"), dict)
+            else main_theme.get("version")
+        )
 
     # Parse plugins
     plugins_data = data.get("plugins", {})
@@ -144,7 +147,7 @@ def parse_wpscan_output(raw_output: str) -> WPScanResult:
     return result
 
 
-def _parse_vulnerability(vuln_data: dict) -> Optional[WPVulnerability]:
+def _parse_vulnerability(vuln_data: dict) -> WPVulnerability | None:
     """Parse a single vulnerability entry from WPScan output."""
     if not vuln_data:
         return None
@@ -160,7 +163,10 @@ def _parse_vulnerability(vuln_data: dict) -> Optional[WPVulnerability]:
     ref_urls: list[str] = []
     for ref_type, ref_values in references.items():
         if ref_type == "cve":
-            ref_urls.extend(f"https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-{c}" for c in ref_values)
+            ref_urls.extend(
+                f"https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-{c}"
+                for c in ref_values
+            )
         elif isinstance(ref_values, list):
             ref_urls.extend(ref_values)
 
@@ -168,7 +174,11 @@ def _parse_vulnerability(vuln_data: dict) -> Optional[WPVulnerability]:
         title=title,
         vuln_type=vuln_data.get("vuln_type"),
         cve=cve,
-        cvss_score=vuln_data.get("cvss", {}).get("score") if isinstance(vuln_data.get("cvss"), dict) else None,
+        cvss_score=(
+            vuln_data.get("cvss", {}).get("score")
+            if isinstance(vuln_data.get("cvss"), dict)
+            else None
+        ),
         fixed_in=vuln_data.get("fixed_in"),
         references=ref_urls[:5],  # Limit reference count
     )

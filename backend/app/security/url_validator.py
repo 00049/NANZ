@@ -1,11 +1,12 @@
-import socket
-import urllib.parse
 import ipaddress
+import urllib.parse
+
 import dns.resolver
-from typing import List
+
 
 class SSRFValidationError(Exception):
     pass
+
 
 class SSRFValidator:
     """
@@ -18,18 +19,22 @@ class SSRFValidator:
 
     # Known bad IP ranges (RFC 1918, RFC 4193, loopback, link-local, multicast, cloud metadata)
     BLOCKED_NETWORKS = [
-        ipaddress.ip_network("127.0.0.0/8"),      # Loopback IPv4
-        ipaddress.ip_network("::1/128"),          # Loopback IPv6
-        ipaddress.ip_network("10.0.0.0/8"),       # Private IPv4
-        ipaddress.ip_network("172.16.0.0/12"),    # Private IPv4
-        ipaddress.ip_network("192.168.0.0/16"),   # Private IPv4
-        ipaddress.ip_network("fc00::/7"),         # Unique Local IPv6
-        ipaddress.ip_network("169.254.0.0/16"),   # Link-local (includes 169.254.169.254 AWS/GCP metadata)
-        ipaddress.ip_network("fe80::/10"),        # Link-local IPv6
-        ipaddress.ip_network("224.0.0.0/4"),      # Multicast IPv4
-        ipaddress.ip_network("ff00::/8"),         # Multicast IPv6
-        ipaddress.ip_network("0.0.0.0/8"),        # Current network (validly blocked for routing)
-        ipaddress.ip_network("255.255.255.255/32")# Broadcast
+        ipaddress.ip_network("127.0.0.0/8"),  # Loopback IPv4
+        ipaddress.ip_network("::1/128"),  # Loopback IPv6
+        ipaddress.ip_network("10.0.0.0/8"),  # Private IPv4
+        ipaddress.ip_network("172.16.0.0/12"),  # Private IPv4
+        ipaddress.ip_network("192.168.0.0/16"),  # Private IPv4
+        ipaddress.ip_network("fc00::/7"),  # Unique Local IPv6
+        ipaddress.ip_network(
+            "169.254.0.0/16"
+        ),  # Link-local (includes 169.254.169.254 AWS/GCP metadata)
+        ipaddress.ip_network("fe80::/10"),  # Link-local IPv6
+        ipaddress.ip_network("224.0.0.0/4"),  # Multicast IPv4
+        ipaddress.ip_network("ff00::/8"),  # Multicast IPv6
+        ipaddress.ip_network(
+            "0.0.0.0/8"
+        ),  # Current network (validly blocked for routing)
+        ipaddress.ip_network("255.255.255.255/32"),  # Broadcast
     ]
 
     @classmethod
@@ -44,7 +49,9 @@ class SSRFValidator:
             raise SSRFValidationError(f"Invalid URL format: {e}")
 
         if parsed.scheme.lower() not in cls.ALLOWED_SCHEMES:
-            raise SSRFValidationError(f"Blocked scheme: {parsed.scheme}. Only http/https are allowed.")
+            raise SSRFValidationError(
+                f"Blocked scheme: {parsed.scheme}. Only http/https are allowed."
+            )
 
         hostname = parsed.hostname
         if not hostname:
@@ -54,52 +61,63 @@ class SSRFValidator:
         try:
             ip_obj = ipaddress.ip_address(hostname)
             cls._check_ip_blocked(ip_obj)
-            return url # It's a safe, direct IP
+            return url  # It's a safe, direct IP
         except ValueError:
-            pass # Not a direct IP, proceed to DNS resolution
+            pass  # Not a direct IP, proceed to DNS resolution
 
         # 2. DNS Resolution (Pre-flight check for rebinding protection)
         try:
             # Use reliable public DNS instead of system DNS (avoids broken IPv6 nameservers)
             resolver = dns.resolver.Resolver(configure=False)
-            resolver.nameservers = ['8.8.8.8', '1.1.1.1', '8.8.4.4']
+            resolver.nameservers = ["8.8.8.8", "1.1.1.1", "8.8.4.4"]
             resolver.lifetime = 5.0
             resolver.timeout = 3.0
 
-            resolved_ips: List[str] = []
-            
+            resolved_ips: list[str] = []
+
             try:
-                answers_ipv4 = resolver.resolve(hostname, 'A')
+                answers_ipv4 = resolver.resolve(hostname, "A")
                 resolved_ips.extend([rdata.to_text() for rdata in answers_ipv4])
             except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
                 pass
-                
+
             try:
-                answers_ipv6 = resolver.resolve(hostname, 'AAAA')
+                answers_ipv6 = resolver.resolve(hostname, "AAAA")
                 resolved_ips.extend([rdata.to_text() for rdata in answers_ipv6])
             except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
                 pass
-                
+
             if not resolved_ips:
                 raise SSRFValidationError(f"Could not resolve hostname: {hostname}")
-                
+
             for ip_str in resolved_ips:
                 ip_obj = ipaddress.ip_address(ip_str)
                 cls._check_ip_blocked(ip_obj)
-                
+
         except dns.exception.DNSException as e:
             raise SSRFValidationError(f"DNS resolution failed for {hostname}: {e}")
-            
+
         return url
 
     @classmethod
     def _check_ip_blocked(cls, ip: ipaddress._BaseAddress) -> None:
         """Checks if a parsed IP address falls into any blocked CIDR ranges."""
         # IP is private, loopback, link-local, multicast, etc.
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
-             raise SSRFValidationError(f"Blocked internal/reserved IP address detected: {ip}")
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            raise SSRFValidationError(
+                f"Blocked internal/reserved IP address detected: {ip}"
+            )
 
         # Explicitly check against our exhaustive blocklist just in case python's built-in flags miss something
         for network in cls.BLOCKED_NETWORKS:
             if ip in network:
-                raise SSRFValidationError(f"Blocked internal/reserved IP address detected: {ip} (matches {network})")
+                raise SSRFValidationError(
+                    f"Blocked internal/reserved IP address detected: {ip} (matches {network})"
+                )

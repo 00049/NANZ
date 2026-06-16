@@ -8,7 +8,6 @@ All checks use HTTP GET/POST to third-party APIs — no interaction with target 
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
 import httpx
 
@@ -27,9 +26,9 @@ class VirusTotalResult:
     harmless_count: int = 0
     undetected_count: int = 0
     total_vendors: int = 0
-    reputation_score: Optional[int] = None
+    reputation_score: int | None = None
     categories: list[str] = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -39,7 +38,7 @@ class SafeBrowsingResult:
     checked: bool = False
     is_safe: bool = True
     threats_found: list[str] = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -50,12 +49,12 @@ class URLScanResult:
     is_malicious: bool = False
     overall_score: int = 0
     categories: list[str] = field(default_factory=list)
-    page_title: Optional[str] = None
-    server: Optional[str] = None
-    ip_address: Optional[str] = None
-    country: Optional[str] = None
+    page_title: str | None = None
+    server: str | None = None
+    ip_address: str | None = None
+    country: str | None = None
     urls_count: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -66,7 +65,7 @@ class LeakIXResult:
     leaks_found: int = 0
     services_found: int = 0
     events: list[dict] = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -74,10 +73,10 @@ class ReputationResult:
     """Complete reputation and threat intelligence result."""
 
     # Per-source results
-    virustotal: Optional[dict] = None
-    safe_browsing: Optional[dict] = None
-    urlscan: Optional[dict] = None
-    leakix: Optional[dict] = None
+    virustotal: dict | None = None
+    safe_browsing: dict | None = None
+    urlscan: dict | None = None
+    leakix: dict | None = None
 
     # Aggregated
     is_flagged_malicious: bool = False
@@ -85,7 +84,7 @@ class ReputationResult:
     sources_flagging_issues: int = 0
 
     # Error
-    error: Optional[str] = None
+    error: str | None = None
 
 
 async def _check_virustotal(domain: str) -> VirusTotalResult:
@@ -162,7 +161,7 @@ async def _check_safe_browsing(domain: str) -> SafeBrowsingResult:
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             res = await client.post(
-                f"https://safebrowsing.googleapis.com/v4/threatMatches:find",
+                "https://safebrowsing.googleapis.com/v4/threatMatches:find",
                 params={"key": settings.GOOGLE_SAFE_BROWSING_KEY},
                 json=payload,
             )
@@ -173,9 +172,9 @@ async def _check_safe_browsing(domain: str) -> SafeBrowsingResult:
                 matches = data.get("matches", [])
                 if matches:
                     result.is_safe = False
-                    result.threats_found = list(set(
-                        m.get("threatType", "UNKNOWN") for m in matches
-                    ))
+                    result.threats_found = list(
+                        set(m.get("threatType", "UNKNOWN") for m in matches)
+                    )
             else:
                 result.error = f"GSB API error: {res.status_code}"
 
@@ -198,7 +197,7 @@ async def _check_urlscan(domain: str) -> URLScanResult:
 
             # Search for recent scans instead of submitting new one
             search_res = await client.get(
-                f"https://urlscan.io/api/v1/search/",
+                "https://urlscan.io/api/v1/search/",
                 params={"q": f"domain:{domain}", "size": 1},
                 headers=headers,
             )
@@ -228,7 +227,9 @@ async def _check_urlscan(domain: str) -> URLScanResult:
                     stats = latest.get("stats", {})
                     result.urls_count = stats.get("uniqUrls", 0)
                 else:
-                    result.checked = True  # No previous scans found — not necessarily bad
+                    result.checked = (
+                        True  # No previous scans found — not necessarily bad
+                    )
             else:
                 result.error = f"URLScan API error: {search_res.status_code}"
 
@@ -261,13 +262,15 @@ async def _check_leakix(domain: str) -> LeakIXResult:
                 if isinstance(data, list):
                     result.leaks_found = len(data)
                     for event in data[:10]:
-                        result.events.append({
-                            "event_type": event.get("event_type", ""),
-                            "protocol": event.get("protocol", ""),
-                            "port": event.get("port", 0),
-                            "summary": event.get("summary", "")[:200],
-                            "time": event.get("time", ""),
-                        })
+                        result.events.append(
+                            {
+                                "event_type": event.get("event_type", ""),
+                                "protocol": event.get("protocol", ""),
+                                "port": event.get("port", 0),
+                                "summary": event.get("summary", "")[:200],
+                                "time": event.get("time", ""),
+                            }
+                        )
                         if event.get("event_type") == "service":
                             result.services_found += 1
                 elif isinstance(data, dict):
@@ -296,7 +299,10 @@ async def run(domain: str) -> ReputationResult:
         leakix_task = _check_leakix(domain)
 
         vt, gsb, urlscan, leakix = await asyncio.gather(
-            vt_task, gsb_task, urlscan_task, leakix_task,
+            vt_task,
+            gsb_task,
+            urlscan_task,
+            leakix_task,
             return_exceptions=True,
         )
 

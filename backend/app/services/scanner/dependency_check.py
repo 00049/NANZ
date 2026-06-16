@@ -17,8 +17,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 import httpx
 
@@ -94,12 +93,28 @@ MINIMUM_SAFE_VERSIONS: dict[str, tuple[int, int, int]] = {
 
 # CWE-associated vulnerable patterns in requirements
 KNOWN_VULN_PATTERNS: list[tuple[re.Pattern, str, str]] = [
-    (re.compile(r"PyYAML[<=]=?[0-4]\.", re.IGNORECASE), "PyYAML < 5.0", "CVE-2017-18342"),
-    (re.compile(r"requests[<=]=?2\.\d{1}\.", re.IGNORECASE), "requests < 2.20", "CVE-2018-18074"),
-    (re.compile(r"Django[<=]=?[123]\.", re.IGNORECASE), "Django < 4.0 (check CVEs)", "Multiple"),
+    (
+        re.compile(r"PyYAML[<=]=?[0-4]\.", re.IGNORECASE),
+        "PyYAML < 5.0",
+        "CVE-2017-18342",
+    ),
+    (
+        re.compile(r"requests[<=]=?2\.\d{1}\.", re.IGNORECASE),
+        "requests < 2.20",
+        "CVE-2018-18074",
+    ),
+    (
+        re.compile(r"Django[<=]=?[123]\.", re.IGNORECASE),
+        "Django < 4.0 (check CVEs)",
+        "Multiple",
+    ),
     (re.compile(r"flask[<=]=?[01]\.", re.IGNORECASE), "Flask < 2.0", "Multiple"),
     (re.compile(r"pillow[<=]=?[78]\.", re.IGNORECASE), "Pillow < 9.0", "Multiple"),
-    (re.compile(r"cryptography[<=]=?[123]\.", re.IGNORECASE), "cryptography < 41.0", "Multiple"),
+    (
+        re.compile(r"cryptography[<=]=?[123]\.", re.IGNORECASE),
+        "cryptography < 41.0",
+        "Multiple",
+    ),
 ]
 
 
@@ -116,7 +131,9 @@ class DependencyFinding:
 
 @dataclass
 class DependencyAnalysisResult:
-    detected_libraries: list = field(default_factory=list)    # {name, version, source, url}
+    detected_libraries: list = field(
+        default_factory=list
+    )  # {name, version, source, url}
     vulnerable_libraries: list = field(default_factory=list)  # DependencyFinding dicts
     package_files_exposed: list = field(default_factory=list)
     dependency_confusion_risk: list = field(default_factory=list)
@@ -125,7 +142,7 @@ class DependencyAnalysisResult:
     total_dependencies_found: int = 0
     outdated_count: int = 0
     critical_vuln_count: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 async def run(url: str, domain: str) -> DependencyAnalysisResult:
@@ -157,14 +174,16 @@ async def run(url: str, domain: str) -> DependencyAnalysisResult:
 
             # Summary counts
             result.total_dependencies_found = len(result.detected_libraries)
-            result.outdated_count = len([
-                l for l in result.detected_libraries
-                if l.get("is_outdated")
-            ])
-            result.critical_vuln_count = len([
-                v for v in result.vulnerable_libraries
-                if v.get("severity") == "CRITICAL"
-            ])
+            result.outdated_count = len(
+                [l for l in result.detected_libraries if l.get("is_outdated")]
+            )
+            result.critical_vuln_count = len(
+                [
+                    v
+                    for v in result.vulnerable_libraries
+                    if v.get("severity") == "CRITICAL"
+                ]
+            )
 
     except Exception as exc:
         logger.error(f"Dependency analysis failed for {url}: {exc}")
@@ -221,7 +240,7 @@ async def _scrape_library_versions(
     return detected
 
 
-def _extract_lib_name(url: str) -> Optional[str]:
+def _extract_lib_name(url: str) -> str | None:
     """Extract library name from a CDN URL."""
     url_lower = url.lower()
     for name in MINIMUM_SAFE_VERSIONS:
@@ -268,24 +287,31 @@ async def _check_package_files(
                 resp = await client.get(f"{base}{path}")
                 if resp.status_code != 200:
                     return
-                content_type = resp.headers.get("content-type", "")
+                resp.headers.get("content-type", "")
                 body = resp.text[:30000]
 
                 # Sanity check: must look like a package file, not an HTML page
                 if "<html" in body[:100].lower():
                     return
 
-                result.package_files_exposed.append({
-                    "path": path,
-                    "size_bytes": len(body),
-                    "severity": _package_severity(path),
-                })
+                result.package_files_exposed.append(
+                    {
+                        "path": path,
+                        "size_bytes": len(body),
+                        "severity": _package_severity(path),
+                    }
+                )
 
                 # Extract dependencies from package.json
                 if path in ("/package.json", "/composer.json"):
                     try:
                         data = json.loads(body)
-                        for section in ("dependencies", "devDependencies", "require", "require-dev"):
+                        for section in (
+                            "dependencies",
+                            "devDependencies",
+                            "require",
+                            "require-dev",
+                        ):
                             for pkg_name, ver in (data.get(section) or {}).items():
                                 ver_str = ver.lstrip("^~>=<")
                                 entry = {
@@ -298,16 +324,18 @@ async def _check_package_files(
                                 result.detected_libraries.append(entry)
 
                         # Dependency confusion detection
-                        pkg_body = body.lower()
+                        body.lower()
                         for pat in INTERNAL_PACKAGE_PATTERNS:
                             matches = pat.findall(body)
                             for m in matches:
-                                result.dependency_confusion_risk.append({
-                                    "package": m.strip('"'),
-                                    "file": path,
-                                    "severity": "RED",
-                                    "detail": f"Private/internal package reference found — potential dependency confusion attack surface",
-                                })
+                                result.dependency_confusion_risk.append(
+                                    {
+                                        "package": m.strip('"'),
+                                        "file": path,
+                                        "severity": "RED",
+                                        "detail": "Private/internal package reference found — potential dependency confusion attack surface",
+                                    }
+                                )
 
                     except json.JSONDecodeError:
                         pass
@@ -316,17 +344,21 @@ async def _check_package_files(
                 if "requirements" in path or path == "/Pipfile":
                     for pattern, desc, cve in KNOWN_VULN_PATTERNS:
                         if pattern.search(body):
-                            result.known_vuln_patterns.append({
-                                "description": desc,
-                                "cve": cve,
-                                "file": path,
-                                "severity": "RED",
-                            })
+                            result.known_vuln_patterns.append(
+                                {
+                                    "description": desc,
+                                    "cve": cve,
+                                    "file": path,
+                                    "severity": "RED",
+                                }
+                            )
 
             except Exception as exc:
                 logger.debug(f"Package file probe {path}: {exc}")
 
-    await asyncio.gather(*[probe(p) for p in PACKAGE_FILE_PATHS], return_exceptions=True)
+    await asyncio.gather(
+        *[probe(p) for p in PACKAGE_FILE_PATHS], return_exceptions=True
+    )
 
 
 def _package_severity(path: str) -> str:
@@ -381,7 +413,8 @@ def _version_severity(name: str, detected: str, min_ver: tuple) -> str:
 async def _osv_lookup(result: DependencyAnalysisResult) -> None:
     """Query OSV.dev for known vulnerabilities in detected packages."""
     to_query = [
-        lib for lib in result.detected_libraries[:MAX_OSV_LOOKUPS]
+        lib
+        for lib in result.detected_libraries[:MAX_OSV_LOOKUPS]
         if lib.get("detected_version") and "." in lib.get("detected_version", "")
     ]
 
@@ -409,13 +442,15 @@ async def _osv_lookup(result: DependencyAnalysisResult) -> None:
                         data = resp.json()
                         vulns = data.get("vulns", [])
                         for vuln in vulns[:3]:
-                            result.osv_matches.append({
-                                "library": name,
-                                "version": version,
-                                "osv_id": vuln.get("id", ""),
-                                "summary": vuln.get("summary", "")[:200],
-                                "severity": "RED",
-                            })
+                            result.osv_matches.append(
+                                {
+                                    "library": name,
+                                    "version": version,
+                                    "osv_id": vuln.get("id", ""),
+                                    "summary": vuln.get("summary", "")[:200],
+                                    "severity": "RED",
+                                }
+                            )
                 except Exception:
                     pass
                 await asyncio.sleep(0.2)

@@ -11,8 +11,7 @@ All checks are PASSIVE — no active exploitation.
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +22,12 @@ class SSLResult:
 
     # Certificate basics
     valid: bool = False
-    expiry_date: Optional[datetime] = None
-    days_until_expiry: Optional[int] = None
-    issuer: Optional[str] = None
-    subject: Optional[str] = None
+    expiry_date: datetime | None = None
+    days_until_expiry: int | None = None
+    issuer: str | None = None
+    subject: str | None = None
     is_self_signed: bool = False
-    serial_number: Optional[str] = None
+    serial_number: str | None = None
 
     # Certificate chain
     chain_complete: bool = False
@@ -38,10 +37,10 @@ class SSLResult:
     sans: list[str] = field(default_factory=list)
     is_wildcard: bool = False
     has_ct_logs: bool = False
-    signature_algorithm: Optional[str] = None
+    signature_algorithm: str | None = None
 
     # TLS protocol support
-    tls_version: Optional[str] = None
+    tls_version: str | None = None
     supports_tls_1_0: bool = False
     supports_tls_1_1: bool = False
     supports_tls_1_2: bool = False
@@ -56,7 +55,7 @@ class SSLResult:
 
     # HSTS
     has_hsts: bool = False
-    hsts_max_age: Optional[int] = None
+    hsts_max_age: int | None = None
     hsts_preloaded: bool = False
     hsts_include_subdomains: bool = False
 
@@ -69,7 +68,7 @@ class SSLResult:
     has_ocsp_stapling: bool = False
 
     # Error
-    error: Optional[str] = None
+    error: str | None = None
 
 
 def _deep_ssl_inspect(domain: str) -> SSLResult:
@@ -79,26 +78,27 @@ def _deep_ssl_inspect(domain: str) -> SSLResult:
 
     try:
         from sslyze import (
-            Scanner,
-            ServerScanRequest,
-            ServerNetworkLocation,
             ScanCommand,
+            Scanner,
+            ServerNetworkLocation,
+            ServerScanRequest,
         )
-        from sslyze.errors import ServerHostnameCouldNotBeResolved, ConnectionToServerFailed
+        from sslyze.errors import (
+            ConnectionToServerFailed,
+            ServerHostnameCouldNotBeResolved,
+        )
     except ImportError:
         logger.warning("SSLyze not installed, falling back to basic SSL check")
         return _basic_ssl_fallback(domain)
 
     try:
         from sslyze import ServerNetworkConfiguration
-        
+
         location = ServerNetworkLocation(hostname=domain, port=443)
         net_config = ServerNetworkConfiguration(
-            tls_server_name_indication=domain,
-            network_timeout=15,
-            network_max_retries=3
+            tls_server_name_indication=domain, network_timeout=15, network_max_retries=3
         )
-        
+
         scan_request = ServerScanRequest(
             server_location=location,
             network_configuration=net_config,
@@ -133,10 +133,16 @@ def _deep_ssl_inspect(domain: str) -> SSLResult:
                     leaf_cert = deployment.received_certificate_chain[0]
 
                     # Expiry
-                    result.expiry_date = leaf_cert.not_valid_after_utc if hasattr(leaf_cert, 'not_valid_after_utc') else leaf_cert.not_valid_after
+                    result.expiry_date = (
+                        leaf_cert.not_valid_after_utc
+                        if hasattr(leaf_cert, "not_valid_after_utc")
+                        else leaf_cert.not_valid_after
+                    )
                     if result.expiry_date.tzinfo is None:
-                        result.expiry_date = result.expiry_date.replace(tzinfo=timezone.utc)
-                    result.days_until_expiry = (result.expiry_date - datetime.now(timezone.utc)).days
+                        result.expiry_date = result.expiry_date.replace(tzinfo=UTC)
+                    result.days_until_expiry = (
+                        result.expiry_date - datetime.now(UTC)
+                    ).days
 
                     # Issuer and subject
                     result.issuer = leaf_cert.issuer.rfc4514_string()
@@ -146,28 +152,44 @@ def _deep_ssl_inspect(domain: str) -> SSLResult:
                     result.is_self_signed = leaf_cert.issuer == leaf_cert.subject
 
                     # Serial number
-                    result.serial_number = format(leaf_cert.serial_number, 'x')
+                    result.serial_number = format(leaf_cert.serial_number, "x")
 
                     # Signature algorithm
-                    result.signature_algorithm = leaf_cert.signature_hash_algorithm.name if leaf_cert.signature_hash_algorithm else None
+                    result.signature_algorithm = (
+                        leaf_cert.signature_hash_algorithm.name
+                        if leaf_cert.signature_hash_algorithm
+                        else None
+                    )
 
                     # Chain
                     result.chain_length = len(deployment.received_certificate_chain)
-                    result.chain_complete = not bool(deployment.verified_certificate_chain is None)
+                    result.chain_complete = not bool(
+                        deployment.verified_certificate_chain is None
+                    )
 
                     # SANs
                     try:
-                        from cryptography.x509 import SubjectAlternativeName, DNSName
-                        san_ext = leaf_cert.extensions.get_extension_for_class(SubjectAlternativeName)
+                        from cryptography.x509 import DNSName, SubjectAlternativeName
+
+                        san_ext = leaf_cert.extensions.get_extension_for_class(
+                            SubjectAlternativeName
+                        )
                         result.sans = san_ext.value.get_values_for_type(DNSName)
-                        result.is_wildcard = any(s.startswith("*.") for s in result.sans)
+                        result.is_wildcard = any(
+                            s.startswith("*.") for s in result.sans
+                        )
                     except Exception:
                         result.sans = []
 
                     # CT logs
                     try:
-                        from cryptography.x509 import PrecertificateSignedCertificateTimestamps
-                        leaf_cert.extensions.get_extension_for_class(PrecertificateSignedCertificateTimestamps)
+                        from cryptography.x509 import (
+                            PrecertificateSignedCertificateTimestamps,
+                        )
+
+                        leaf_cert.extensions.get_extension_for_class(
+                            PrecertificateSignedCertificateTimestamps
+                        )
                         result.has_ct_logs = True
                     except Exception:
                         result.has_ct_logs = False
@@ -193,12 +215,15 @@ def _deep_ssl_inspect(domain: str) -> SSLResult:
             # ── Heartbleed ──
             heartbleed = server_scan_result.scan_result.heartbleed
             if heartbleed and heartbleed.result:
-                result.heartbleed_vulnerable = heartbleed.result.is_vulnerable_to_heartbleed
+                result.heartbleed_vulnerable = (
+                    heartbleed.result.is_vulnerable_to_heartbleed
+                )
 
             # ── ROBOT ──
             robot = server_scan_result.scan_result.robot
             if robot and robot.result:
                 from sslyze import RobotScanResultEnum
+
                 result.robot_vulnerable = robot.result.robot_result in (
                     RobotScanResultEnum.VULNERABLE_WEAK_ORACLE,
                     RobotScanResultEnum.VULNERABLE_STRONG_ORACLE,
@@ -207,7 +232,9 @@ def _deep_ssl_inspect(domain: str) -> SSLResult:
             # ── Session Renegotiation ──
             reneg = server_scan_result.scan_result.session_renegotiation
             if reneg and reneg.result:
-                result.supports_secure_renegotiation = reneg.result.supports_secure_renegotiation
+                result.supports_secure_renegotiation = (
+                    reneg.result.supports_secure_renegotiation
+                )
 
         # Determine highest TLS version connected
         if result.supports_tls_1_3:
@@ -287,6 +314,7 @@ def _check_ciphers(scan_result, result: SSLResult) -> None:
 import socket
 import ssl
 
+
 def _basic_ssl_fallback(domain: str) -> SSLResult:
     """Fallback to basic ssl module check if SSLyze is unavailable."""
     result = SSLResult()
@@ -301,8 +329,10 @@ def _basic_ssl_fallback(domain: str) -> SSLResult:
                     return _httpx_ssl_fallback(domain)
 
                 expiry_str = cert["notAfter"]
-                expiry = datetime.strptime(expiry_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
-                days_left = (expiry - datetime.now(timezone.utc)).days
+                expiry = datetime.strptime(expiry_str, "%b %d %H:%M:%S %Y %Z").replace(
+                    tzinfo=UTC
+                )
+                days_left = (expiry - datetime.now(UTC)).days
 
                 issuer = dict(x[0] for x in cert.get("issuer", []))
                 subject = dict(x[0] for x in cert.get("subject", []))
@@ -317,7 +347,9 @@ def _basic_ssl_fallback(domain: str) -> SSLResult:
                 result.tls_version = protocol
                 result.issuer = issuer_name
                 result.subject = subject_cn
-                result.is_self_signed = issuer_cn == subject_cn and subject_cn != "Unknown"
+                result.is_self_signed = (
+                    issuer_cn == subject_cn and subject_cn != "Unknown"
+                )
 
                 # Extract SANs from basic cert
                 san_list = cert.get("subjectAltName", [])
@@ -333,15 +365,21 @@ def _basic_ssl_fallback(domain: str) -> SSLResult:
 def _httpx_ssl_fallback(domain: str) -> SSLResult:
     """Ultimate fallback: just check if HTTPS port 443 responds."""
     import httpx
+
     try:
         # Use verify=False to ignore certificate validation errors, just check if port is open
         with httpx.Client(verify=False, timeout=5.0) as client:
             client.head(f"https://{domain}")
             # If it succeeds or returns a status code (even 4xx/5xx), port 443 is serving HTTPS
             # We don't have cert details, but we know it's HTTPS
-            return SSLResult(valid=False, error="SSL details unavailable, but port 443 is open")
+            return SSLResult(
+                valid=False, error="SSL details unavailable, but port 443 is open"
+            )
     except Exception:
-        return SSLResult(valid=False, error="Could not connect to port 443 — site may not support HTTPS")
+        return SSLResult(
+            valid=False,
+            error="Could not connect to port 443 — site may not support HTTPS",
+        )
 
 
 async def run(domain: str) -> SSLResult:
@@ -350,5 +388,7 @@ async def run(domain: str) -> SSLResult:
         return await asyncio.to_thread(_deep_ssl_inspect, domain)
     except Exception as e:
         logger.error(f"Top-level exception in ssl_check.run for {domain}: {e}")
-        return SSLResult(valid=False, error="Could not connect to port 443 — site may not support HTTPS")
-
+        return SSLResult(
+            valid=False,
+            error="Could not connect to port 443 — site may not support HTTPS",
+        )

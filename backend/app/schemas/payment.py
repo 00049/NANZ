@@ -1,5 +1,7 @@
-from pydantic import BaseModel, ConfigDict, EmailStr
 from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, EmailStr
+
 
 class PaymentCreateRequest(BaseModel):
     """Request body for creating a Razorpay order."""
@@ -8,6 +10,7 @@ class PaymentCreateRequest(BaseModel):
     email: EmailStr
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class PaymentCreateResponse(BaseModel):
     """Razorpay order details returned to the frontend."""
@@ -19,6 +22,7 @@ class PaymentCreateResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class PaymentVerifyRequest(BaseModel):
     """Request body for verifying Razorpay payment success."""
 
@@ -28,6 +32,7 @@ class PaymentVerifyRequest(BaseModel):
     email: EmailStr
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class PaymentVerifyResponse(BaseModel):
     """JWT response for paid report access."""

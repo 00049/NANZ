@@ -1,22 +1,23 @@
+from datetime import UTC, datetime
 from uuid import UUID
-from datetime import datetime, timezone
-from fastapi import Request, HTTPException, Depends
+
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from typing import Optional
 
-from app.db.session import get_db
 from app.core.security import get_current_user_optional
-from app.models.user import User
+from app.db.session import get_db
+from app.models.report_access import ReportAuditLog, ReportShareLink
 from app.models.scan import Scan
-from app.models.report_access import ReportShareLink, ReportAuditLog
+from app.models.user import User
 from app.models.workspace import WorkspaceMember
+
 
 async def verify_report_access(
     scan_id: UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: User | None = Depends(get_current_user_optional),
 ) -> Scan:
     """
     Enterprise authorization guard for report access.
@@ -25,7 +26,7 @@ async def verify_report_access(
     """
     # Check if a share token was provided in query params
     share_token = request.query_params.get("token")
-    
+
     # 1. Fetch the Scan
     result = await db.execute(select(Scan).where(Scan.id == scan_id))
     scan = result.scalars().first()
@@ -41,12 +42,12 @@ async def verify_report_access(
             select(ReportShareLink).where(
                 ReportShareLink.scan_id == scan_id,
                 ReportShareLink.token == share_token,
-                ReportShareLink.is_revoked == False
+                not ReportShareLink.is_revoked,
             )
         )
         share_link = token_result.scalars().first()
         if share_link:
-            if share_link.expires_at and share_link.expires_at < datetime.now(timezone.utc):
+            if share_link.expires_at and share_link.expires_at < datetime.now(UTC):
                 raise HTTPException(status_code=403, detail="Share link has expired")
             has_access = True
             access_method = "share_link"
@@ -67,7 +68,7 @@ async def verify_report_access(
                 select(WorkspaceMember).where(
                     WorkspaceMember.workspace_id == scan.workspace_id,
                     WorkspaceMember.user_id == current_user.id,
-                    WorkspaceMember.status == "active"
+                    WorkspaceMember.status == "active",
                 )
             )
             if member_result.scalars().first():
@@ -78,7 +79,7 @@ async def verify_report_access(
             member_result = await db.execute(
                 select(WorkspaceMember.workspace_id).where(
                     WorkspaceMember.user_id == current_user.id,
-                    WorkspaceMember.status == "active"
+                    WorkspaceMember.status == "active",
                 )
             )
             user_workspaces = member_result.scalars().all()
@@ -87,15 +88,17 @@ async def verify_report_access(
                     select(WorkspaceMember).where(
                         WorkspaceMember.user_id == scan.user_id,
                         WorkspaceMember.workspace_id.in_(user_workspaces),
-                        WorkspaceMember.status == "active"
+                        WorkspaceMember.status == "active",
                     )
                 )
                 if owner_member_result.scalars().first():
                     has_access = True
                     access_method = "implicit_workspace_member"
-                    
-    print(f"DEBUG GUARD: scan_id={scan_id}, scan_type='{scan.scan_type}', current_user={current_user.id if current_user else None}, has_access={has_access}")
-    
+
+    print(
+        f"DEBUG GUARD: scan_id={scan_id}, scan_type='{scan.scan_type}', current_user={current_user.id if current_user else None}, has_access={has_access}"
+    )
+
     # Allow public access to free scans (they will be gated by 402 in get_report)
     if not has_access and scan.scan_type == "free":
         print("DEBUG GUARD: Granting free scan access")
@@ -107,7 +110,10 @@ async def verify_report_access(
         # User is authenticated but has no relation to the scan.
         if not current_user:
             raise HTTPException(status_code=401, detail="Authentication required")
-        raise HTTPException(status_code=403, detail="Access Denied. You do not have permission to view this report.")
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied. You do not have permission to view this report.",
+        )
 
     # 4. Create Audit Log
     client_ip = request.client.host if request.client else None
@@ -121,7 +127,7 @@ async def verify_report_access(
         viewer_user_id=current_user.id if current_user else None,
         viewer_ip=client_ip,
         action="view",
-        share_token_used=share_token if access_method == "share_link" else None
+        share_token_used=share_token if access_method == "share_link" else None,
     )
     db.add(audit_log)
     await db.commit()

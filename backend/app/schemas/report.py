@@ -3,10 +3,11 @@ Expanded report schemas — FullReport with 8 domain-specific sub-reports,
 CRITICAL severity level, DPDP compliance, and comprehensive risk items.
 """
 
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
-from typing import Literal, Optional, Any
-from uuid import UUID
 from datetime import datetime
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 
 class RiskItem(BaseModel):
@@ -15,8 +16,8 @@ class RiskItem(BaseModel):
     id: str = ""
     title: str
     severity: Literal["CRITICAL", "RED", "AMBER", "GREEN", "INFO"]
-    cvss_score: Optional[float] = None
-    cve_id: Optional[str] = None
+    cvss_score: float | None = None
+    cve_id: str | None = None
     check_domain: str = ""
     check_type: str = ""
     business_impact: str
@@ -28,36 +29,36 @@ class RiskItem(BaseModel):
     references: list[str] = []
 
     # ── EPSS + CISA KEV enrichment ──────────────────────────────────────────
-    epss_score: Optional[float] = None          # 0.0–1.0 exploit probability
-    epss_percentile: Optional[int] = None       # 0–100
-    cisa_kev: bool = False                      # In CISA Known Exploited Vulns catalog
-    actively_exploited: bool = False            # kev OR epss >= 0.5
-    epss_badge: Optional[str] = None           # "🚨 CISA KEV" | "⚡ Actively Exploited" | ...
+    epss_score: float | None = None  # 0.0–1.0 exploit probability
+    epss_percentile: int | None = None  # 0–100
+    cisa_kev: bool = False  # In CISA Known Exploited Vulns catalog
+    actively_exploited: bool = False  # kev OR epss >= 0.5
+    epss_badge: str | None = None  # "🚨 CISA KEV" | "⚡ Actively Exploited" | ...
 
     # ── Contextual severity override ────────────────────────────────────────
-    contextual_severity: Optional[str] = None   # Adjusted severity after EPSS/KEV
-    severity_adjusted: bool = False             # True if severity was changed
-    severity_reason: Optional[str] = None       # Explanation for adjustment
-    original_severity: Optional[str] = None     # Pre-adjustment severity
+    contextual_severity: str | None = None  # Adjusted severity after EPSS/KEV
+    severity_adjusted: bool = False  # True if severity was changed
+    severity_reason: str | None = None  # Explanation for adjustment
+    original_severity: str | None = None  # Pre-adjustment severity
 
     # ── RRF (Risk Reduction Factor) ─────────────────────────────────────────
-    rrf_score: Optional[float] = None           # 0.00–3.00
-    rrf_label: Optional[str] = None             # "High" | "Medium" | "Low"
-    rrf_display: Optional[str] = None           # "Risk Reduction: 2.14 (High)"
+    rrf_score: float | None = None  # 0.00–3.00
+    rrf_label: str | None = None  # "High" | "Medium" | "Low"
+    rrf_display: str | None = None  # "Risk Reduction: 2.14 (High)"
 
     # ── ALE (Annual Loss Expectancy) — in INR ───────────────────────────────
-    ale_reduction_inr: Optional[int] = None     # Rupee value
-    ale_display: Optional[str] = None           # Human-readable INR display
-    ale_data: Optional[dict] = None             # Full ALE breakdown dict
+    ale_reduction_inr: int | None = None  # Rupee value
+    ale_display: str | None = None  # Human-readable INR display
+    ale_data: dict | None = None  # Full ALE breakdown dict
 
     # ── SLA Tier ─────────────────────────────────────────────────────────────
-    sla_deadline: Optional[str] = None          # "24 hours" | "7 days" | "30 days" | "90 days"
-    sla_tier: Optional[str] = None              # "P0" | "P1" | "P2" | "P3"
+    sla_deadline: str | None = None  # "24 hours" | "7 days" | "30 days" | "90 days"
+    sla_tier: str | None = None  # "P0" | "P1" | "P2" | "P3"
 
     # ── Scanner provenance ────────────────────────────────────────────────────
-    source_scanner: Optional[str] = None        # "semgrep" | "snyk" | "trivy" | ...
-    ingested: bool = False                      # True if from BYOS ingestion
-    confirmed_by: list[str] = []                # All scanners that confirmed this finding
+    source_scanner: str | None = None  # "semgrep" | "snyk" | "trivy" | ...
+    ingested: bool = False  # True if from BYOS ingestion
+    confirmed_by: list[str] = []  # All scanners that confirmed this finding
 
     @field_validator("title")
     def title_not_too_long(cls, v: str) -> str:
@@ -74,7 +75,7 @@ class DomainDetailReport(BaseModel):
 
     domain_name: str = ""
     data: dict = {}
-    error: Optional[str] = None
+    error: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -99,14 +100,14 @@ class FullReport(BaseModel):
     info_risks: list[RiskItem] = []
 
     # Domain-by-domain detailed results
-    ssl_report: Optional[dict] = None
-    headers_report: Optional[dict] = None
-    dns_report: Optional[dict] = None
-    ports_report: Optional[dict] = None
-    webapp_report: Optional[dict] = None
-    cms_report: Optional[dict] = None
-    reputation_report: Optional[dict] = None
-    infra_report: Optional[dict] = None
+    ssl_report: dict | None = None
+    headers_report: dict | None = None
+    dns_report: dict | None = None
+    ports_report: dict | None = None
+    webapp_report: dict | None = None
+    cms_report: dict | None = None
+    reputation_report: dict | None = None
+    infra_report: dict | None = None
 
     # Stats
     total_checks_run: int = 0
@@ -122,26 +123,26 @@ class FullReport(BaseModel):
     dpdp_issues: list[str] = []
 
     # ── Enterprise Compliance v2 (section-level) ──────────────────────────────
-    compliance_report_v2: Optional[dict] = None     # Full DPDP/GDPR/PCI/SOC2 deep report
-    dpdp_penalty_crore: Optional[int] = None        # Total max DPDP penalty exposure (crore)
-    dpdp_risk_level: Optional[str] = None           # "Compliant" | "At Risk" | "Non-Compliant"
-    gdpr_status: Optional[str] = None               # "Compliant" | "Partial" | "Non-Compliant"
-    pci_status: Optional[str] = None                # "Compliant" | "Partial" | "Not Applicable"
-    soc2_status: Optional[str] = None              # "Compliant" | "Partial" | "Non-Compliant"
+    compliance_report_v2: dict | None = None  # Full DPDP/GDPR/PCI/SOC2 deep report
+    dpdp_penalty_crore: int | None = None  # Total max DPDP penalty exposure (crore)
+    dpdp_risk_level: str | None = None  # "Compliant" | "At Risk" | "Non-Compliant"
+    gdpr_status: str | None = None  # "Compliant" | "Partial" | "Non-Compliant"
+    pci_status: str | None = None  # "Compliant" | "Partial" | "Not Applicable"
+    soc2_status: str | None = None  # "Compliant" | "Partial" | "Non-Compliant"
 
     # ── OWASP Coverage ────────────────────────────────────────────────────────
-    owasp_coverage: Optional[dict] = None           # OWASP Top 10 2021 coverage map
-    owasp_llm_coverage: Optional[dict] = None       # OWASP LLM Top 10 2025 coverage map
-    owasp_coverage_score: int = 0                   # 0–100 percentage
+    owasp_coverage: dict | None = None  # OWASP Top 10 2021 coverage map
+    owasp_llm_coverage: dict | None = None  # OWASP LLM Top 10 2025 coverage map
+    owasp_coverage_score: int = 0  # 0–100 percentage
     owasp_llm_coverage_score: int = 0
 
     # ── Risk Quantification Summary ───────────────────────────────────────────
-    total_ale_reduction_inr: Optional[int] = None   # Total preventable annual loss (INR)
-    total_ale_display: Optional[str] = None         # Human-readable INR summary
-    avg_rrf_score: Optional[float] = None
-    kev_findings_count: int = 0                     # Findings in CISA KEV
-    epss_enriched_count: int = 0                    # Findings with EPSS data
-    severity_adjusted_count: int = 0               # Findings with adjusted severity
+    total_ale_reduction_inr: int | None = None  # Total preventable annual loss (INR)
+    total_ale_display: str | None = None  # Human-readable INR summary
+    avg_rrf_score: float | None = None
+    kev_findings_count: int = 0  # Findings in CISA KEV
+    epss_enriched_count: int = 0  # Findings with EPSS data
+    severity_adjusted_count: int = 0  # Findings with adjusted severity
     p0_count: int = 0
     p1_count: int = 0
     p2_count: int = 0
@@ -204,17 +205,17 @@ class ReportResponse(BaseModel):
     scan_id: UUID
     overall_severity: str
     risk_items: list[RiskItem]
-    ai_summary: Optional[str] = None
+    ai_summary: str | None = None
     checks_run: dict
-    ssl_score: Optional[int] = None
-    header_score: Optional[int] = None
+    ssl_score: int | None = None
+    header_score: int | None = None
     is_paid: bool
     generated_at: datetime
 
     # Expanded fields
     overall_score: int = 0
     executive_summary: str = ""
-    domain_reports: Optional[dict] = None
+    domain_reports: dict | None = None
     total_findings: int = 0
     critical_count: int = 0
     high_count: int = 0

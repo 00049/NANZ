@@ -20,7 +20,6 @@ Usage:
 
 import json
 import logging
-from typing import Optional
 
 import httpx
 
@@ -33,9 +32,13 @@ _REDIS_TTL = 86400  # 24 hours
 async def _get_redis():
     """Lazily import redis to avoid hard dependency at module load time."""
     try:
-        from app.config import settings
         from redis.asyncio import Redis
-        r = Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=2)
+
+        from app.config import settings
+
+        r = Redis.from_url(
+            settings.REDIS_URL, decode_responses=True, socket_connect_timeout=2
+        )
         return r
     except Exception:
         return None
@@ -190,11 +193,14 @@ async def get_epss_batch(cve_ids: list[str]) -> dict[str, dict]:
     except Exception as exc:
         logger.warning(f"EPSS batch fetch failed: {exc}")
         for cve_id in uncached:
-            results.setdefault(cve_id, {
-                "epss_score": None,
-                "epss_percentile": None,
-                "error": str(exc)[:100],
-            })
+            results.setdefault(
+                cve_id,
+                {
+                    "epss_score": None,
+                    "epss_percentile": None,
+                    "error": str(exc)[:100],
+                },
+            )
 
     # ── Cache successful results ──
     if redis:
@@ -203,7 +209,9 @@ async def get_epss_batch(cve_ids: list[str]) -> dict[str, dict]:
             if r2:
                 for cve_id, result in results.items():
                     if result.get("epss_score") is not None:
-                        await r2.set(f"epss:{cve_id}", json.dumps(result), ex=_REDIS_TTL)
+                        await r2.set(
+                            f"epss:{cve_id}", json.dumps(result), ex=_REDIS_TTL
+                        )
                 await r2.aclose()
         except Exception:
             pass
@@ -211,7 +219,7 @@ async def get_epss_batch(cve_ids: list[str]) -> dict[str, dict]:
     return results
 
 
-def classify_epss(epss_score: Optional[float]) -> str:
+def classify_epss(epss_score: float | None) -> str:
     """
     Convert an EPSS score into a human-readable exploitation likelihood label.
 

@@ -5,10 +5,10 @@ Tests: wildcard CORS, reflected origin, null origin, credentials with wildcard.
 All checks are passive GET requests with spoofed Origin headers.
 """
 
-import httpx
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class CORSResult:
     credentials_with_wildcard: bool = False
     tested_endpoints: list[str] = field(default_factory=list)
     findings: list[dict] = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 async def run(url: str) -> CORSResult:
@@ -41,7 +41,9 @@ async def run(url: str) -> CORSResult:
             timeout=8.0,
             follow_redirects=True,
             verify=False,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
         ) as client:
 
             for path in TEST_PATHS:
@@ -52,46 +54,58 @@ async def run(url: str) -> CORSResult:
                 try:
                     res = await client.get(test_url, headers={"Origin": EVIL_ORIGIN})
                     acao = res.headers.get("access-control-allow-origin", "")
-                    acac = res.headers.get("access-control-allow-credentials", "").lower()
+                    acac = res.headers.get(
+                        "access-control-allow-credentials", ""
+                    ).lower()
                     content_type = res.headers.get("content-type", "").lower()
-                    is_api = "json" in content_type or "xml" in content_type or path != ""
+                    is_api = (
+                        "json" in content_type or "xml" in content_type or path != ""
+                    )
 
                     # Wildcard CORS
                     if acao == "*":
                         if acac == "true":
                             result.credentials_with_wildcard = True
-                            result.findings.append({
-                                "type": "cors_credentials_wildcard",
-                                "endpoint": test_url,
-                                "severity": "CRITICAL",
-                                "detail": "Access-Control-Allow-Origin: * with Access-Control-Allow-Credentials: true",
-                            })
+                            result.findings.append(
+                                {
+                                    "type": "cors_credentials_wildcard",
+                                    "endpoint": test_url,
+                                    "severity": "CRITICAL",
+                                    "detail": "Access-Control-Allow-Origin: * with Access-Control-Allow-Credentials: true",
+                                }
+                            )
                         elif is_api:
                             result.wildcard_cors = True
-                            result.findings.append({
-                                "type": "cors_wildcard_api",
-                                "endpoint": test_url,
-                                "severity": "RED",
-                                "detail": "Wildcard CORS on API endpoint",
-                            })
+                            result.findings.append(
+                                {
+                                    "type": "cors_wildcard_api",
+                                    "endpoint": test_url,
+                                    "severity": "RED",
+                                    "detail": "Wildcard CORS on API endpoint",
+                                }
+                            )
                         else:
                             result.wildcard_cors = True
-                            result.findings.append({
-                                "type": "cors_wildcard_html",
-                                "endpoint": test_url,
-                                "severity": "AMBER",
-                                "detail": "Wildcard CORS on HTML page",
-                            })
+                            result.findings.append(
+                                {
+                                    "type": "cors_wildcard_html",
+                                    "endpoint": test_url,
+                                    "severity": "AMBER",
+                                    "detail": "Wildcard CORS on HTML page",
+                                }
+                            )
 
                     # Reflected origin
                     elif acao == EVIL_ORIGIN:
                         result.reflected_origin = True
-                        result.findings.append({
-                            "type": "cors_reflected_origin",
-                            "endpoint": test_url,
-                            "severity": "RED",
-                            "detail": f"Origin {EVIL_ORIGIN} reflected back in ACAO header",
-                        })
+                        result.findings.append(
+                            {
+                                "type": "cors_reflected_origin",
+                                "endpoint": test_url,
+                                "severity": "RED",
+                                "detail": f"Origin {EVIL_ORIGIN} reflected back in ACAO header",
+                            }
+                        )
 
                 except Exception as e:
                     logger.debug(f"CORS evil origin test failed for {test_url}: {e}")
@@ -103,12 +117,14 @@ async def run(url: str) -> CORSResult:
 
                     if acao == "null":
                         result.null_origin_allowed = True
-                        result.findings.append({
-                            "type": "cors_null_origin",
-                            "endpoint": test_url,
-                            "severity": "RED",
-                            "detail": "Null origin allowed — sandboxed iframes can read responses",
-                        })
+                        result.findings.append(
+                            {
+                                "type": "cors_null_origin",
+                                "endpoint": test_url,
+                                "severity": "RED",
+                                "detail": "Null origin allowed — sandboxed iframes can read responses",
+                            }
+                        )
 
                 except Exception as e:
                     logger.debug(f"CORS null origin test failed for {test_url}: {e}")

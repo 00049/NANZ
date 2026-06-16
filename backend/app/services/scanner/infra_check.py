@@ -12,13 +12,12 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
-import httpx
 import dns.asyncresolver
+import httpx
 
 from app.config import settings
-from app.utils.subprocess_runner import run_safe_subprocess, is_tool_available
+from app.utils.subprocess_runner import is_tool_available, run_safe_subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +28,10 @@ class SubdomainInfo:
 
     subdomain: str
     is_live: bool = False
-    ip_address: Optional[str] = None
-    cname: Optional[str] = None
+    ip_address: str | None = None
+    cname: str | None = None
     takeover_risk: bool = False
-    takeover_service: Optional[str] = None
+    takeover_service: str | None = None
 
 
 @dataclass
@@ -40,24 +39,24 @@ class EmailSecurityDetail:
     """Deep email security analysis beyond basic SPF/DMARC/DKIM."""
 
     has_bimi: bool = False
-    bimi_record: Optional[str] = None
+    bimi_record: str | None = None
     has_mta_sts: bool = False
-    mta_sts_mode: Optional[str] = None  # enforce, testing, none
+    mta_sts_mode: str | None = None  # enforce, testing, none
 
 
 @dataclass
 class IPReputation:
     """IP address reputation data."""
 
-    ip_address: Optional[str] = None
-    asn: Optional[str] = None
-    org: Optional[str] = None
-    country: Optional[str] = None
-    city: Optional[str] = None
-    abuse_score: Optional[int] = None
+    ip_address: str | None = None
+    asn: str | None = None
+    org: str | None = None
+    country: str | None = None
+    city: str | None = None
+    abuse_score: int | None = None
     total_reports: int = 0
     is_known_bad: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -70,7 +69,7 @@ class InfraResult:
     takeover_risks: int = 0
 
     # Email security deep check
-    email_security: Optional[dict] = None
+    email_security: dict | None = None
 
     # Typosquatting
     typosquat_count: int = 0
@@ -78,10 +77,10 @@ class InfraResult:
     typosquat_risk: str = "LOW"  # LOW, MEDIUM, HIGH
 
     # IP Reputation
-    ip_reputation: Optional[dict] = None
+    ip_reputation: dict | None = None
 
     # Error
-    error: Optional[str] = None
+    error: str | None = None
 
 
 # Known services with dangling CNAME signatures for subdomain takeover
@@ -260,10 +259,26 @@ async def _check_ip_reputation(ip_address: str) -> IPReputation:
 async def _check_typosquatting(domain: str) -> tuple[int, list[str]]:
     """Use dnstwist to find registered lookalike domains."""
     try:
-        command = ["python", "-m", "dnstwist", "--registered", "--format", "json", domain]
+        command = [
+            "python",
+            "-m",
+            "dnstwist",
+            "--registered",
+            "--format",
+            "json",
+            domain,
+        ]
 
         if is_tool_available("dnstwist"):
-            command = ["dnstwist", "--registered", "--format", "json", "--threads", "4", domain]
+            command = [
+                "dnstwist",
+                "--registered",
+                "--format",
+                "json",
+                "--threads",
+                "4",
+                domain,
+            ]
 
         proc_result = await run_safe_subprocess(
             command, timeout=30.0, tool_name="dnstwist"
@@ -297,27 +312,36 @@ async def run(domain: str, ip_address: str | None = None) -> InfraResult:
         typosquat_task = _check_typosquatting(domain)
         ip_task = _check_ip_reputation(ip_address or "")
 
-        subdomains, email_sec, (typo_count, typo_domains), ip_rep = await asyncio.gather(
-            subfinder_task, email_task, typosquat_task, ip_task,
-            return_exceptions=True,
+        subdomains, email_sec, (typo_count, typo_domains), ip_rep = (
+            await asyncio.gather(
+                subfinder_task,
+                email_task,
+                typosquat_task,
+                ip_task,
+                return_exceptions=True,
+            )
         )
 
         # Process subdomains
         if isinstance(subdomains, list) and subdomains:
             # Check details for first 20 subdomains (avoid rate limiting)
             check_tasks = [_check_subdomain_details(s) for s in subdomains[:20]]
-            subdomain_details = await asyncio.gather(*check_tasks, return_exceptions=True)
+            subdomain_details = await asyncio.gather(
+                *check_tasks, return_exceptions=True
+            )
 
             for detail in subdomain_details:
                 if isinstance(detail, SubdomainInfo):
-                    result.subdomains.append({
-                        "subdomain": detail.subdomain,
-                        "is_live": detail.is_live,
-                        "ip_address": detail.ip_address,
-                        "cname": detail.cname,
-                        "takeover_risk": detail.takeover_risk,
-                        "takeover_service": detail.takeover_service,
-                    })
+                    result.subdomains.append(
+                        {
+                            "subdomain": detail.subdomain,
+                            "is_live": detail.is_live,
+                            "ip_address": detail.ip_address,
+                            "cname": detail.cname,
+                            "takeover_risk": detail.takeover_risk,
+                            "takeover_service": detail.takeover_service,
+                        }
+                    )
                     if detail.takeover_risk:
                         result.takeover_risks += 1
 
@@ -335,7 +359,9 @@ async def run(domain: str, ip_address: str | None = None) -> InfraResult:
         # Typosquatting
         if isinstance(typo_count, int):
             result.typosquat_count = typo_count
-            result.typosquat_domains = typo_domains if isinstance(typo_domains, list) else []
+            result.typosquat_domains = (
+                typo_domains if isinstance(typo_domains, list) else []
+            )
             if typo_count > 10:
                 result.typosquat_risk = "HIGH"
             elif typo_count > 5:
@@ -358,7 +384,9 @@ async def run(domain: str, ip_address: str | None = None) -> InfraResult:
             }
 
     except Exception as e:
-        logger.error(f"Infrastructure check failed for domain={domain}: {e}", exc_info=True)
+        logger.error(
+            f"Infrastructure check failed for domain={domain}: {e}", exc_info=True
+        )
         result.error = str(e)
 
     return result

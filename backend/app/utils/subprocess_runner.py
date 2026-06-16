@@ -12,7 +12,6 @@ import asyncio
 import logging
 import shutil
 from dataclasses import dataclass
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,7 @@ class SubprocessResult:
     stderr: str
     return_code: int
     timed_out: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
 
 def is_tool_available(tool_name: str) -> bool:
@@ -51,9 +50,7 @@ async def run_safe_subprocess(
     Returns:
         SubprocessResult with stdout, stderr, return_code, and error info.
     """
-    logger.info(
-        f"[{scan_id}] Running {tool_name}: {' '.join(command[:5])}..."
-    )
+    logger.info(f"[{scan_id}] Running {tool_name}: {' '.join(command[:5])}...")
 
     try:
         process = await asyncio.create_subprocess_exec(
@@ -66,12 +63,10 @@ async def run_safe_subprocess(
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 process.communicate(), timeout=timeout
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             process.kill()
             await process.wait()
-            logger.warning(
-                f"[{scan_id}] {tool_name} timed out after {timeout}s"
-            )
+            logger.warning(f"[{scan_id}] {tool_name} timed out after {timeout}s")
             return SubprocessResult(
                 stdout="",
                 stderr="",

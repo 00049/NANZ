@@ -7,11 +7,11 @@ server info leakage, and scores 0-100.
 All checks are PASSIVE — only HTTP GET requests.
 """
 
-import httpx
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +84,9 @@ class HeaderDetail:
 
     name: str
     present: bool
-    value: Optional[str] = None
+    value: str | None = None
     status: str = "missing"  # pass, fail, missing, warning
-    detail: Optional[str] = None
+    detail: str | None = None
 
 
 @dataclass
@@ -96,9 +96,9 @@ class RedirectInfo:
     http_to_https: bool = False
     redirect_chain: list[str] = field(default_factory=list)
     chain_length: int = 0
-    final_url: Optional[str] = None
+    final_url: str | None = None
     too_many_redirects: bool = False
-    www_consistency: Optional[str] = None  # "www", "non-www", "inconsistent"
+    www_consistency: str | None = None  # "www", "non-www", "inconsistent"
 
 
 @dataclass
@@ -109,18 +109,18 @@ class HeadersResult:
     missing: list[str] = field(default_factory=list)
     score: int = 0
     grade: str = "F"
-    server_header: Optional[str] = None
-    x_powered_by: Optional[str] = None
-    error: Optional[str] = None
+    server_header: str | None = None
+    x_powered_by: str | None = None
+    error: str | None = None
 
     # Expanded fields
     header_details: list[dict] = field(default_factory=list)
     leaky_headers: list[dict] = field(default_factory=list)
-    redirect_info: Optional[dict] = None
+    redirect_info: dict | None = None
     server_exposes_version: bool = False
     xpowered_exposes_tech: bool = False
     has_deprecated_feature_policy: bool = False
-    hsts_max_age: Optional[int] = None
+    hsts_max_age: int | None = None
     hsts_includes_subdomains: bool = False
     csp_report_only: bool = False
     referrer_unsafe: bool = False
@@ -132,7 +132,7 @@ class HeadersResult:
     robots_sensitive_paths: list[str] = field(default_factory=list)
     robots_total_disallowed: int = 0
     has_security_txt: bool = False
-    security_txt_content: Optional[str] = None
+    security_txt_content: str | None = None
     http2_supported: bool = False
     http3_supported: bool = False
 
@@ -176,7 +176,9 @@ async def run(url: str) -> HeadersResult:
 
             for header_name, config in SECURITY_HEADERS.items():
                 total_weight += config["weight"]
-                detail = HeaderDetail(name=header_name, present=header_name in headers_lower)
+                detail = HeaderDetail(
+                    name=header_name, present=header_name in headers_lower
+                )
 
                 if detail.present:
                     detail.value = headers_lower[header_name]
@@ -196,13 +198,15 @@ async def run(url: str) -> HeadersResult:
                     detail.status = "missing"
                     detail.detail = config["description"]
 
-                result.header_details.append({
-                    "name": detail.name,
-                    "present": detail.present,
-                    "value": detail.value,
-                    "status": detail.status,
-                    "detail": detail.detail,
-                })
+                result.header_details.append(
+                    {
+                        "name": detail.name,
+                        "present": detail.present,
+                        "value": detail.value,
+                        "status": detail.status,
+                        "detail": detail.detail,
+                    }
+                )
 
             result.total_headers_checked = len(SECURITY_HEADERS)
             result.total_headers_passed = sum(
@@ -214,11 +218,13 @@ async def run(url: str) -> HeadersResult:
                 value = headers_lower.get(header_name)
                 if value:
                     has_version = bool(VERSION_PATTERN.search(value))
-                    result.leaky_headers.append({
-                        "name": header_name,
-                        "value": value,
-                        "exposes_version": has_version,
-                    })
+                    result.leaky_headers.append(
+                        {
+                            "name": header_name,
+                            "value": value,
+                            "exposes_version": has_version,
+                        }
+                    )
 
                     if header_name == "server":
                         result.server_header = value
@@ -240,7 +246,10 @@ async def run(url: str) -> HeadersResult:
                 result.hsts_includes_subdomains = "includesubdomains" in hsts.lower()
 
             # ── Step 7: CSP report-only check ──
-            if "content-security-policy-report-only" in headers_lower and "content-security-policy" not in headers_lower:
+            if (
+                "content-security-policy-report-only" in headers_lower
+                and "content-security-policy" not in headers_lower
+            ):
                 result.csp_report_only = True
 
             # ── Step 8: Referrer-Policy safety ──
@@ -256,9 +265,26 @@ async def run(url: str) -> HeadersResult:
             # ── Step 10: robots.txt analysis ──
             try:
                 base_url = url.rstrip("/")
-                robots_res = await client.get(f"{base_url}/robots.txt", headers={"User-Agent": USER_AGENT})
-                if robots_res.status_code == 200 and "disallow" in robots_res.text.lower():
-                    sensitive_keywords = {"admin", "backup", "config", "db", ".env", "api", "internal", "private", "secret", "wp-admin", "phpmyadmin"}
+                robots_res = await client.get(
+                    f"{base_url}/robots.txt", headers={"User-Agent": USER_AGENT}
+                )
+                if (
+                    robots_res.status_code == 200
+                    and "disallow" in robots_res.text.lower()
+                ):
+                    sensitive_keywords = {
+                        "admin",
+                        "backup",
+                        "config",
+                        "db",
+                        ".env",
+                        "api",
+                        "internal",
+                        "private",
+                        "secret",
+                        "wp-admin",
+                        "phpmyadmin",
+                    }
                     disallowed = []
                     for line in robots_res.text.splitlines():
                         line_stripped = line.strip().lower()
@@ -268,7 +294,8 @@ async def run(url: str) -> HeadersResult:
                                 disallowed.append(path)
                     result.robots_total_disallowed = len(disallowed)
                     result.robots_sensitive_paths = [
-                        p for p in disallowed
+                        p
+                        for p in disallowed
                         if any(kw in p.lower() for kw in sensitive_keywords)
                     ]
             except Exception as e:
@@ -277,14 +304,25 @@ async def run(url: str) -> HeadersResult:
             # ── Step 11: security.txt check (RFC 9116) ──
             try:
                 base_url = url.rstrip("/")
-                sec_res = await client.get(f"{base_url}/.well-known/security.txt", headers={"User-Agent": USER_AGENT})
-                if sec_res.status_code == 200 and ("contact:" in sec_res.text.lower() or "policy:" in sec_res.text.lower()):
+                sec_res = await client.get(
+                    f"{base_url}/.well-known/security.txt",
+                    headers={"User-Agent": USER_AGENT},
+                )
+                if sec_res.status_code == 200 and (
+                    "contact:" in sec_res.text.lower()
+                    or "policy:" in sec_res.text.lower()
+                ):
                     result.has_security_txt = True
                     result.security_txt_content = sec_res.text[:500]
                 else:
                     # Try root path fallback
-                    sec_res2 = await client.get(f"{base_url}/security.txt", headers={"User-Agent": USER_AGENT})
-                    if sec_res2.status_code == 200 and "contact:" in sec_res2.text.lower():
+                    sec_res2 = await client.get(
+                        f"{base_url}/security.txt", headers={"User-Agent": USER_AGENT}
+                    )
+                    if (
+                        sec_res2.status_code == 200
+                        and "contact:" in sec_res2.text.lower()
+                    ):
                         result.has_security_txt = True
                         result.security_txt_content = sec_res2.text[:500]
             except Exception as e:
@@ -299,7 +337,9 @@ async def run(url: str) -> HeadersResult:
 
             # ── Calculate final score ──
             # Base score from header weights
-            base_score = int((earned_weight / total_weight) * 80) if total_weight > 0 else 0
+            base_score = (
+                int((earned_weight / total_weight) * 80) if total_weight > 0 else 0
+            )
 
             # Bonus for redirect and no leaky headers
             bonus = 0
@@ -311,7 +351,7 @@ async def run(url: str) -> HeadersResult:
                 bonus += 5
 
             result.score = min(100, base_score + bonus)
-            
+
             # Letter grade
             if result.score >= 95:
                 result.grade = "A+"
@@ -364,6 +404,7 @@ async def _check_redirects(client: httpx.AsyncClient, url: str) -> RedirectInfo:
                 if location:
                     if location.startswith("/"):
                         from urllib.parse import urlparse
+
                         parsed = urlparse(current_url)
                         location = f"{parsed.scheme}://{parsed.netloc}{location}"
                     current_url = location
@@ -401,7 +442,10 @@ def _validate_header(header_name: str, value: str) -> dict:
             if max_age >= 31536000:
                 return {"status": "pass", "detail": f"max-age={max_age} (>= 1 year)"}
             else:
-                return {"status": "warning", "detail": f"max-age={max_age} (< 1 year recommended)"}
+                return {
+                    "status": "warning",
+                    "detail": f"max-age={max_age} (< 1 year recommended)",
+                }
         return {"status": "fail", "detail": "Missing max-age directive"}
 
     elif header_name == "x-frame-options":
@@ -417,17 +461,29 @@ def _validate_header(header_name: str, value: str) -> dict:
     elif header_name == "referrer-policy":
         unsafe = {"unsafe-url"}
         if val_lower in unsafe:
-            return {"status": "fail", "detail": "Unsafe referrer policy — leaks full URL"}
+            return {
+                "status": "fail",
+                "detail": "Unsafe referrer policy — leaks full URL",
+            }
         return {"status": "pass", "detail": f"Set to {value}"}
 
     elif header_name == "x-xss-protection":
         if val_lower == "0":
-            return {"status": "pass", "detail": "Correctly disabled (modern recommendation)"}
-        return {"status": "warning", "detail": "Should be '0' — legacy filter can cause issues"}
+            return {
+                "status": "pass",
+                "detail": "Correctly disabled (modern recommendation)",
+            }
+        return {
+            "status": "warning",
+            "detail": "Should be '0' — legacy filter can cause issues",
+        }
 
     elif header_name == "content-security-policy":
         if "unsafe-inline" in val_lower and "unsafe-eval" in val_lower:
-            return {"status": "warning", "detail": "CSP present but allows unsafe-inline and unsafe-eval"}
+            return {
+                "status": "warning",
+                "detail": "CSP present but allows unsafe-inline and unsafe-eval",
+            }
         if "default-src" in val_lower or "script-src" in val_lower:
             return {"status": "pass", "detail": "CSP present with source restrictions"}
         return {"status": "warning", "detail": "CSP present but may be too permissive"}

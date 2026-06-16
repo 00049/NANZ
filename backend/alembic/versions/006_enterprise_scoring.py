@@ -11,9 +11,10 @@ NOTE: All new columns have defaults, making this migration backward-compatible
 with existing reports rows.
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
+
+from alembic import op
 
 revision = '006_enterprise_scoring'
 down_revision = '005'

@@ -1,7 +1,7 @@
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional
 from uuid import UUID
-from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field
+
 
 class ScanCreateRequest(BaseModel):
     """Request body for creating a scan."""
@@ -9,6 +9,7 @@ class ScanCreateRequest(BaseModel):
     url: str
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class ScanResponse(BaseModel):
     """Response returned when a scan is accepted."""
@@ -18,19 +19,21 @@ class ScanResponse(BaseModel):
     estimated_duration_seconds: int
 
     model_config = ConfigDict(from_attributes=True)
-    
+
+
 class ScanStatusResponse(BaseModel):
     """Polling response for scan status and progress."""
 
     scan_id: UUID
     status: str
     progress: dict[str, str] = Field(default_factory=dict)
-    error_message: Optional[str] = None
-    
-    overall_severity: Optional[str] = None
-    preview_risk: Optional[dict] = None
+    error_message: str | None = None
+
+    overall_severity: str | None = None
+    preview_risk: dict | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class ScanPreviewResponse(BaseModel):
     """Locked free preview for a completed report."""

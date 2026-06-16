@@ -12,12 +12,9 @@ PASSIVE CONSTRAINTS:
 """
 
 import asyncio
-import json
 import logging
-import re
 from dataclasses import dataclass, field
-from typing import Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 import httpx
 
@@ -39,8 +36,7 @@ GRAPHQL_PATHS = [
 ]
 
 # Minimal introspection query
-INTROSPECTION_QUERY = {
-    "query": """
+INTROSPECTION_QUERY = {"query": """
     {
       __schema {
         types {
@@ -59,12 +55,10 @@ INTROSPECTION_QUERY = {
         subscriptionType { name }
       }
     }
-    """
-}
+    """}
 
 # Depth limit test query (5 levels deep, harmless)
-DEPTH_TEST_QUERY = {
-    "query": """
+DEPTH_TEST_QUERY = {"query": """
     {
       __schema {
         types {
@@ -80,13 +74,10 @@ DEPTH_TEST_QUERY = {
         }
       }
     }
-    """
-}
+    """}
 
 # Field suggestion detection
-FIELD_SUGGESTION_QUERY = {
-    "query": "{ __typename nonExistentFieldNanztest }"
-}
+FIELD_SUGGESTION_QUERY = {"query": "{ __typename nonExistentFieldNanztest }"}
 
 # Aliases abuse test (100 identical aliases)
 ALIAS_ABUSE_QUERY = {
@@ -120,7 +111,7 @@ class GraphQLResult:
     batching_supported: bool = False
     type_count: int = 0
     findings: list = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 async def run(url: str, domain: str) -> GraphQLResult:
@@ -188,9 +179,9 @@ async def _discover_graphql(
             )
             content_type = resp.headers.get("content-type", "")
             if resp.status_code in (200, 400) and (
-                "json" in content_type or
-                "graphql" in content_type or
-                (resp.status_code == 200 and "data" in resp.text)
+                "json" in content_type
+                or "graphql" in content_type
+                or (resp.status_code == 200 and "data" in resp.text)
             ):
                 try:
                     data = resp.json()
@@ -240,9 +231,20 @@ async def _check_introspection(
                         name = f.get("name", "")
                         result.mutation_types_found.append(name)
                         # Flag sensitive mutations
-                        if any(kw in name.lower() for kw in
-                               ["delete", "remove", "purge", "admin", "ban",
-                                "promote", "reset", "change_password", "transfer"]):
+                        if any(
+                            kw in name.lower()
+                            for kw in [
+                                "delete",
+                                "remove",
+                                "purge",
+                                "admin",
+                                "ban",
+                                "promote",
+                                "reset",
+                                "change_password",
+                                "transfer",
+                            ]
+                        ):
                             result.dangerous_mutation_types.append(name)
 
         result.introspection_data = {
@@ -251,22 +253,26 @@ async def _check_introspection(
             "subscription_enabled": result.subscription_enabled,
         }
 
-        result.findings.append(GraphQLFinding(
-            vulnerability_type="graphql_introspection_enabled",
-            endpoint=gql_url,
-            severity="RED",
-            detail=f"GraphQL introspection enabled — {result.type_count} types exposed including full schema",
-            confirmed=True,
-        ).__dict__)
-
-        if result.dangerous_mutation_types:
-            result.findings.append(GraphQLFinding(
-                vulnerability_type="graphql_dangerous_mutations",
+        result.findings.append(
+            GraphQLFinding(
+                vulnerability_type="graphql_introspection_enabled",
                 endpoint=gql_url,
                 severity="RED",
-                detail=f"Sensitive mutation types exposed: {', '.join(result.dangerous_mutation_types[:5])}",
+                detail=f"GraphQL introspection enabled — {result.type_count} types exposed including full schema",
                 confirmed=True,
-            ).__dict__)
+            ).__dict__
+        )
+
+        if result.dangerous_mutation_types:
+            result.findings.append(
+                GraphQLFinding(
+                    vulnerability_type="graphql_dangerous_mutations",
+                    endpoint=gql_url,
+                    severity="RED",
+                    detail=f"Sensitive mutation types exposed: {', '.join(result.dangerous_mutation_types[:5])}",
+                    confirmed=True,
+                ).__dict__
+            )
 
     except Exception as exc:
         logger.debug(f"Introspection check error: {exc}")
@@ -279,8 +285,11 @@ async def _check_playground(
 ) -> None:
     """Check for exposed GraphQL playground/IDE."""
     playground_paths = [
-        "/graphql", "/graphiql", "/api/graphql",
-        "/playground", "/graphql-playground",
+        "/graphql",
+        "/graphiql",
+        "/api/graphql",
+        "/playground",
+        "/graphql-playground",
         "/v1/graphql",
     ]
 
@@ -289,18 +298,26 @@ async def _check_playground(
             resp = await client.get(f"{base}{path}")
             if resp.status_code == 200:
                 body = resp.text.lower()
-                if any(kw in body for kw in [
-                    "graphiql", "playground", "graphql-ui",
-                    "graphql playground", "apollo studio"
-                ]):
+                if any(
+                    kw in body
+                    for kw in [
+                        "graphiql",
+                        "playground",
+                        "graphql-ui",
+                        "graphql playground",
+                        "apollo studio",
+                    ]
+                ):
                     result.playground_exposed = True
-                    result.findings.append(GraphQLFinding(
-                        vulnerability_type="graphql_playground_exposed",
-                        endpoint=f"{base}{path}",
-                        severity="AMBER",
-                        detail=f"GraphQL playground/IDE exposed in production — allows query exploration",
-                        confirmed=True,
-                    ).__dict__)
+                    result.findings.append(
+                        GraphQLFinding(
+                            vulnerability_type="graphql_playground_exposed",
+                            endpoint=f"{base}{path}",
+                            severity="AMBER",
+                            detail="GraphQL playground/IDE exposed in production — allows query exploration",
+                            confirmed=True,
+                        ).__dict__
+                    )
                     return
         except Exception:
             pass
@@ -320,13 +337,15 @@ async def _check_depth_limit(
             # If we got data back with deep nesting, no depth limit
             if data.get("data") and not data.get("errors"):
                 result.depth_limit_missing = True
-                result.findings.append(GraphQLFinding(
-                    vulnerability_type="graphql_no_depth_limit",
-                    endpoint=gql_url,
-                    severity="AMBER",
-                    detail="No query depth limit — deeply nested queries could cause resource exhaustion",
-                    confirmed=True,
-                ).__dict__)
+                result.findings.append(
+                    GraphQLFinding(
+                        vulnerability_type="graphql_no_depth_limit",
+                        endpoint=gql_url,
+                        severity="AMBER",
+                        detail="No query depth limit — deeply nested queries could cause resource exhaustion",
+                        confirmed=True,
+                    ).__dict__
+                )
     except Exception as exc:
         logger.debug(f"Depth limit check: {exc}")
 
@@ -343,13 +362,15 @@ async def _check_alias_limit(
             data = resp.json()
             if data.get("data") and len(data["data"]) >= 90:  # Got most aliases back
                 result.alias_limit_missing = True
-                result.findings.append(GraphQLFinding(
-                    vulnerability_type="graphql_alias_abuse",
-                    endpoint=gql_url,
-                    severity="AMBER",
-                    detail="No alias limit enforced — 100-alias query returned full data (query amplification risk)",
-                    confirmed=True,
-                ).__dict__)
+                result.findings.append(
+                    GraphQLFinding(
+                        vulnerability_type="graphql_alias_abuse",
+                        endpoint=gql_url,
+                        severity="AMBER",
+                        detail="No alias limit enforced — 100-alias query returned full data (query amplification risk)",
+                        confirmed=True,
+                    ).__dict__
+                )
     except Exception as exc:
         logger.debug(f"Alias limit check: {exc}")
 
@@ -366,13 +387,15 @@ async def _check_field_suggestions(
             body = resp.text
             if "Did you mean" in body or "Suggestion" in body:
                 result.field_suggestions_enabled = True
-                result.findings.append(GraphQLFinding(
-                    vulnerability_type="graphql_field_suggestions",
-                    endpoint=gql_url,
-                    severity="GREEN",
-                    detail='Field suggestions enabled — "Did you mean" hints reveal schema even without introspection',
-                    confirmed=True,
-                ).__dict__)
+                result.findings.append(
+                    GraphQLFinding(
+                        vulnerability_type="graphql_field_suggestions",
+                        endpoint=gql_url,
+                        severity="GREEN",
+                        detail='Field suggestions enabled — "Did you mean" hints reveal schema even without introspection',
+                        confirmed=True,
+                    ).__dict__
+                )
     except Exception as exc:
         logger.debug(f"Field suggestion check: {exc}")
 
@@ -394,13 +417,15 @@ async def _check_batching(
             data = resp.json()
             if isinstance(data, list) and len(data) > 1:
                 result.batching_supported = True
-                result.findings.append(GraphQLFinding(
-                    vulnerability_type="graphql_batching_allowed",
-                    endpoint=gql_url,
-                    severity="AMBER",
-                    detail="Query batching supported — multiplies attack surface for brute-force and rate limit bypass",
-                    confirmed=True,
-                ).__dict__)
+                result.findings.append(
+                    GraphQLFinding(
+                        vulnerability_type="graphql_batching_allowed",
+                        endpoint=gql_url,
+                        severity="AMBER",
+                        detail="Query batching supported — multiplies attack surface for brute-force and rate limit bypass",
+                        confirmed=True,
+                    ).__dict__
+                )
     except Exception as exc:
         logger.debug(f"Batching check: {exc}")
 
@@ -422,12 +447,14 @@ async def _check_rate_limiting(
 
         if not rate_limited:
             result.rate_limit_missing = True
-            result.findings.append(GraphQLFinding(
-                vulnerability_type="graphql_no_rate_limit",
-                endpoint=gql_url,
-                severity="RED",
-                detail="No rate limiting on GraphQL endpoint — 30 rapid queries succeeded without throttling",
-                confirmed=True,
-            ).__dict__)
+            result.findings.append(
+                GraphQLFinding(
+                    vulnerability_type="graphql_no_rate_limit",
+                    endpoint=gql_url,
+                    severity="RED",
+                    detail="No rate limiting on GraphQL endpoint — 30 rapid queries succeeded without throttling",
+                    confirmed=True,
+                ).__dict__
+            )
     except Exception as exc:
         logger.debug(f"Rate limit check: {exc}")

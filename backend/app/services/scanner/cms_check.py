@@ -8,15 +8,14 @@ installation file checks, tech version fingerprinting.
 All checks are PASSIVE — only HTTP GET requests.
 """
 
-import re
-import json
 import logging
-import httpx
+import re
 from dataclasses import dataclass, field
-from typing import Optional
+
+import httpx
 
 from app.config import settings
-from app.utils.subprocess_runner import run_safe_subprocess, is_tool_available
+from app.utils.subprocess_runner import is_tool_available, run_safe_subprocess
 from app.utils.wpscan_parser import parse_wpscan_output
 
 logger = logging.getLogger(__name__)
@@ -26,7 +25,11 @@ USER_AGENT = "ShieldCheck-Scanner/2.0 (+https://shieldcheck.in/bot)"
 # CMS detection signatures
 CMS_SIGNATURES = {
     "wordpress": {
-        "html": [r'<meta name="generator" content="WordPress', r"wp-content", r"wp-includes"],
+        "html": [
+            r'<meta name="generator" content="WordPress',
+            r"wp-content",
+            r"wp-includes",
+        ],
         "headers": ["x-powered-by:wordpress"],
     },
     "shopify": {
@@ -34,11 +37,19 @@ CMS_SIGNATURES = {
         "headers": ["x-shopify-stage"],
     },
     "joomla": {
-        "html": [r'<meta name="generator" content="Joomla', r"/media/jui/", r"/templates/system/"],
+        "html": [
+            r'<meta name="generator" content="Joomla',
+            r"/media/jui/",
+            r"/templates/system/",
+        ],
         "headers": [],
     },
     "drupal": {
-        "html": [r"Drupal\.settings", r"/sites/default/files/", r'<meta name="Generator" content="Drupal'],
+        "html": [
+            r"Drupal\.settings",
+            r"/sites/default/files/",
+            r'<meta name="Generator" content="Drupal',
+        ],
         "headers": ["x-drupal-cache", "x-generator:drupal"],
     },
     "magento": {
@@ -54,24 +65,32 @@ CMS_SIGNATURES = {
         "headers": [],
     },
     "webflow": {
-        "html": [r"webflow\.com", r'data-wf-page', r'class="w-'],
+        "html": [r"webflow\.com", r"data-wf-page", r'class="w-'],
         "headers": ["x-powered-by:webflow"],
     },
 }
 
 # Admin panel paths to check
 ADMIN_PATHS = [
-    "/wp-admin/", "/wp-login.php",
-    "/admin/", "/administrator/",
-    "/backend/", "/manager/",
-    "/panel/", "/cpanel/",
-    "/whm/", "/login/",
+    "/wp-admin/",
+    "/wp-login.php",
+    "/admin/",
+    "/administrator/",
+    "/backend/",
+    "/manager/",
+    "/panel/",
+    "/cpanel/",
+    "/whm/",
+    "/login/",
 ]
 
 # Installation files that should not be left behind
 INSTALL_FILES = [
-    "/install.php", "/setup.php", "/install/",
-    "/upgrade.php", "/configuration.php~",
+    "/install.php",
+    "/setup.php",
+    "/install/",
+    "/upgrade.php",
+    "/configuration.php~",
 ]
 
 # Known latest versions (updated periodically)
@@ -88,8 +107,8 @@ class PluginVuln:
     """A vulnerable plugin/theme finding."""
 
     name: str
-    version: Optional[str] = None
-    latest_version: Optional[str] = None
+    version: str | None = None
+    latest_version: str | None = None
     vulnerabilities: list[dict] = field(default_factory=list)
     outdated: bool = False
 
@@ -99,9 +118,9 @@ class CMSResult:
     """Complete CMS and software vulnerability scan result."""
 
     # CMS detection
-    cms_type: Optional[str] = None
-    detected_version: Optional[str] = None
-    latest_known_version: Optional[str] = None
+    cms_type: str | None = None
+    detected_version: str | None = None
+    latest_known_version: str | None = None
     outdated_version: bool = False
 
     # Admin panel exposure
@@ -117,23 +136,25 @@ class CMSResult:
     wp_users_found: list[str] = field(default_factory=list)
     wp_readme_exposed: bool = False
     wp_core_vulnerabilities: list[dict] = field(default_factory=list)
-    wp_main_theme: Optional[str] = None
+    wp_main_theme: str | None = None
 
     # Tech fingerprinting
-    server_software: Optional[str] = None
-    server_version: Optional[str] = None
-    php_version: Optional[str] = None
-    jquery_version: Optional[str] = None
-    framework_detected: Optional[str] = None
+    server_software: str | None = None
+    server_version: str | None = None
+    php_version: str | None = None
+    jquery_version: str | None = None
+    framework_detected: str | None = None
 
     # Exposed API keys in source
     exposed_api_keys: list[str] = field(default_factory=list)
 
     # Error
-    error: Optional[str] = None
+    error: str | None = None
 
 
-async def _detect_cms(html: str, headers: dict[str, str]) -> tuple[Optional[str], Optional[str]]:
+async def _detect_cms(
+    html: str, headers: dict[str, str]
+) -> tuple[str | None, str | None]:
     """Detect CMS type and version from HTML content and headers."""
     headers_lower = {k.lower(): v.lower() for k, v in headers.items()}
 
@@ -156,18 +177,24 @@ async def _detect_cms(html: str, headers: dict[str, str]) -> tuple[Optional[str]
     return None, None
 
 
-def _extract_version(cms_name: str, html: str) -> Optional[str]:
+def _extract_version(cms_name: str, html: str) -> str | None:
     """Try to extract CMS version from HTML content."""
     if cms_name == "wordpress":
-        match = re.search(r'<meta name="generator" content="WordPress ([\d.]+)"', html, re.IGNORECASE)
+        match = re.search(
+            r'<meta name="generator" content="WordPress ([\d.]+)"', html, re.IGNORECASE
+        )
         if match:
             return match.group(1)
     elif cms_name == "joomla":
-        match = re.search(r'<meta name="generator" content="Joomla! ([\d.]+)', html, re.IGNORECASE)
+        match = re.search(
+            r'<meta name="generator" content="Joomla! ([\d.]+)', html, re.IGNORECASE
+        )
         if match:
             return match.group(1)
     elif cms_name == "drupal":
-        match = re.search(r'<meta name="Generator" content="Drupal ([\d.]+)', html, re.IGNORECASE)
+        match = re.search(
+            r'<meta name="Generator" content="Drupal ([\d.]+)', html, re.IGNORECASE
+        )
         if match:
             return match.group(1)
     return None
@@ -183,11 +210,15 @@ async def _run_wpscan(url: str) -> dict:
     try:
         command = [
             "wpscan",
-            "--url", url,
+            "--url",
+            url,
             "--no-banner",
-            "--format", "json",
-            "--enumerate", "vp,vt,tt,cb,dbe,u1-5",
-            "--plugins-detection", "passive",
+            "--format",
+            "json",
+            "--enumerate",
+            "vp,vt,tt,cb,dbe,u1-5",
+            "--plugins-detection",
+            "passive",
         ]
 
         if settings.WPSCAN_API_TOKEN:
@@ -212,20 +243,22 @@ async def _run_wpscan(url: str) -> dict:
         # Plugins with vulns
         wpscan_data["plugins"] = []
         for plugin in parsed.plugins:
-            wpscan_data["plugins"].append({
-                "name": plugin.name,
-                "version": plugin.version,
-                "outdated": plugin.outdated,
-                "vulns": [
-                    {
-                        "title": v.title,
-                        "cve": v.cve,
-                        "cvss_score": v.cvss_score,
-                        "fixed_in": v.fixed_in,
-                    }
-                    for v in plugin.vulnerabilities
-                ],
-            })
+            wpscan_data["plugins"].append(
+                {
+                    "name": plugin.name,
+                    "version": plugin.version,
+                    "outdated": plugin.outdated,
+                    "vulns": [
+                        {
+                            "title": v.title,
+                            "cve": v.cve,
+                            "cvss_score": v.cvss_score,
+                            "fixed_in": v.fixed_in,
+                        }
+                        for v in plugin.vulnerabilities
+                    ],
+                }
+            )
 
         # Core vulnerabilities
         wpscan_data["core_vulns"] = [
@@ -256,9 +289,18 @@ async def _check_admin_panels(client: httpx.AsyncClient, base_url: str) -> list[
                 content = res.text.lower()
                 # Validate it's not a soft 404 and actually looks like a login/admin page
                 is_soft_404 = len(content.strip()) < 10 or any(
-                    ind in content for ind in ["not found", "404", "page not found", "does not exist", "nothing found"]
+                    ind in content
+                    for ind in [
+                        "not found",
+                        "404",
+                        "page not found",
+                        "does not exist",
+                        "nothing found",
+                    ]
                 )
-                if not is_soft_404 and ("password" in content or "login" in content or "admin" in content):
+                if not is_soft_404 and (
+                    "password" in content or "login" in content or "admin" in content
+                ):
                     found.append(path)
         except Exception:
             continue
@@ -279,9 +321,20 @@ async def _check_install_files(client: httpx.AsyncClient, base_url: str) -> list
             if res.status_code == 200 and len(res.text) > 50:
                 content_lower = res.text.lower()
                 is_soft_404 = any(
-                    ind in content_lower for ind in ["not found", "404", "page not found", "does not exist", "nothing found"]
+                    ind in content_lower
+                    for ind in [
+                        "not found",
+                        "404",
+                        "page not found",
+                        "does not exist",
+                        "nothing found",
+                    ]
                 )
-                if not is_soft_404 and ("install" in content_lower or "setup" in content_lower or "database" in content_lower):
+                if not is_soft_404 and (
+                    "install" in content_lower
+                    or "setup" in content_lower
+                    or "database" in content_lower
+                ):
                     found.append(path)
         except Exception:
             continue
@@ -308,7 +361,7 @@ def _extract_tech_versions(html: str, headers: dict[str, str]) -> dict:
             tech["server_version"] = version_match.group(1)
 
     # jQuery version
-    jquery_match = re.search(r'jquery[.-]?([\d.]+)(?:\.min)?\.js', html, re.IGNORECASE)
+    jquery_match = re.search(r"jquery[.-]?([\d.]+)(?:\.min)?\.js", html, re.IGNORECASE)
     if jquery_match:
         tech["jquery_version"] = jquery_match.group(1)
 
@@ -326,10 +379,10 @@ def _extract_tech_versions(html: str, headers: dict[str, str]) -> dict:
 def _find_exposed_keys(html: str) -> list[str]:
     """Search for exposed API keys in page source."""
     patterns = [
-        (r'sk_live_[a-zA-Z0-9]{20,}', "Stripe Secret Key"),
-        (r'pk_live_[a-zA-Z0-9]{20,}', "Stripe Publishable Key"),
-        (r'AKIA[0-9A-Z]{16}', "AWS Access Key"),
-        (r'AIza[0-9A-Za-z\-_]{35}', "Google API Key"),
+        (r"sk_live_[a-zA-Z0-9]{20,}", "Stripe Secret Key"),
+        (r"pk_live_[a-zA-Z0-9]{20,}", "Stripe Publishable Key"),
+        (r"AKIA[0-9A-Z]{16}", "AWS Access Key"),
+        (r"AIza[0-9A-Za-z\-_]{35}", "Google API Key"),
     ]
 
     found: list[str] = []

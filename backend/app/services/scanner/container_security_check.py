@@ -12,13 +12,11 @@ PASSIVE CONSTRAINTS:
 """
 
 import asyncio
-import json
 import logging
 import re
 import socket
 from dataclasses import dataclass, field
-from typing import Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 import httpx
 
@@ -45,10 +43,10 @@ K8S_API_PATHS = [
 
 # Internal metadata endpoints (when domain resolves to cloud)
 METADATA_ENDPOINTS = [
-    "http://169.254.169.254/latest/meta-data/",              # AWS
-    "http://169.254.169.254/computeMetadata/v1/",           # GCP
-    "http://169.254.169.254/metadata/v1/",                   # DigitalOcean
-    "http://metadata.google.internal/computeMetadata/v1/",   # GCP alt
+    "http://169.254.169.254/latest/meta-data/",  # AWS
+    "http://169.254.169.254/computeMetadata/v1/",  # GCP
+    "http://169.254.169.254/metadata/v1/",  # DigitalOcean
+    "http://metadata.google.internal/computeMetadata/v1/",  # GCP alt
 ]
 
 # Common Kubernetes Dashboard paths
@@ -67,16 +65,33 @@ CONTAINER_SIGNATURES = {
 CONTAINER_BODY_SIGNATURES = [
     (re.compile(r"\"repositories\":\s*\[", re.IGNORECASE), "docker_registry_catalog"),
     (re.compile(r"Kubernetes Dashboard", re.IGNORECASE), "k8s_dashboard"),
-    (re.compile(r'"kind":\s*"Node"|"kind":\s*"Pod"', re.IGNORECASE), "k8s_api_response"),
-    (re.compile(r"amazon-linux|ubuntu.*ec2|CoreOS|Container Linux", re.IGNORECASE), "cloud_vm_banner"),
+    (
+        re.compile(r'"kind":\s*"Node"|"kind":\s*"Pod"', re.IGNORECASE),
+        "k8s_api_response",
+    ),
+    (
+        re.compile(r"amazon-linux|ubuntu.*ec2|CoreOS|Container Linux", re.IGNORECASE),
+        "cloud_vm_banner",
+    ),
     (re.compile(r"docker\.io|gcr\.io|quay\.io", re.IGNORECASE), "container_image_ref"),
-    (re.compile(r"ECS_CONTAINER_METADATA|AWS_CONTAINER_CREDENTIALS|EKS_CLUSTER", re.IGNORECASE), "aws_ecs_env"),
+    (
+        re.compile(
+            r"ECS_CONTAINER_METADATA|AWS_CONTAINER_CREDENTIALS|EKS_CLUSTER",
+            re.IGNORECASE,
+        ),
+        "aws_ecs_env",
+    ),
 ]
 
 # Cloud-specific DNS prefixes that indicate container orchestration
 CLOUD_CLUSTER_DNS_PREFIXES = [
-    ".k8s.", ".eks.", ".gke.", ".aks.",
-    ".cluster.", ".kube.", ".rancher.",
+    ".k8s.",
+    ".eks.",
+    ".gke.",
+    ".aks.",
+    ".cluster.",
+    ".kube.",
+    ".rancher.",
 ]
 
 
@@ -94,7 +109,7 @@ class ContainerSecurityResult:
     environment_leaks: list = field(default_factory=list)
     container_ports_open: list = field(default_factory=list)
     findings: list = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 CONTAINER_PORTS = [
@@ -126,8 +141,10 @@ async def run(url: str, domain: str) -> ContainerSecurityResult:
             timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=5.0),
             follow_redirects=True,
             verify=False,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; SecurityAudit/1.0)",
-                     "Accept": "application/json, */*"},
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; SecurityAudit/1.0)",
+                "Accept": "application/json, */*",
+            },
             limits=httpx.Limits(max_connections=6),
         ) as client:
 
@@ -164,12 +181,14 @@ async def _check_docker_registry(
                     result.docker_registry_exposed = True
                     result.docker_registry_path = path
                     severity = "CRITICAL" if path == "/v2/_catalog" else "RED"
-                    result.findings.append({
-                        "type": "docker_registry_exposed",
-                        "endpoint": f"{base}{path}",
-                        "severity": severity,
-                        "detail": f"Docker registry API accessible at {path} — container images may be enumerable",
-                    })
+                    result.findings.append(
+                        {
+                            "type": "docker_registry_exposed",
+                            "endpoint": f"{base}{path}",
+                            "severity": severity,
+                            "detail": f"Docker registry API accessible at {path} — container images may be enumerable",
+                        }
+                    )
 
                 # Check for catalog exposure
                 if path == "/v2/_catalog" and resp.status_code == 200:
@@ -177,13 +196,15 @@ async def _check_docker_registry(
                         data = resp.json()
                         repos = data.get("repositories", [])
                         if repos:
-                            result.findings.append({
-                                "type": "docker_catalog_exposed",
-                                "endpoint": f"{base}{path}",
-                                "severity": "CRITICAL",
-                                "detail": f"Docker registry catalog exposed — {len(repos)} repositories listed: {', '.join(repos[:3])}",
-                                "repositories": repos[:5],
-                            })
+                            result.findings.append(
+                                {
+                                    "type": "docker_catalog_exposed",
+                                    "endpoint": f"{base}{path}",
+                                    "severity": "CRITICAL",
+                                    "detail": f"Docker registry catalog exposed — {len(repos)} repositories listed: {', '.join(repos[:3])}",
+                                    "repositories": repos[:5],
+                                }
+                            )
                     except Exception:
                         pass
         except Exception:
@@ -205,17 +226,22 @@ async def _check_k8s_api(
             if resp.status_code in (200, 401, 403):
                 body = resp.text[:2000]
                 # Kubernetes API response signatures
-                if any(kw in body for kw in ['"apiVersion"', '"kind"', '"groups"', '"resources"']):
+                if any(
+                    kw in body
+                    for kw in ['"apiVersion"', '"kind"', '"groups"', '"resources"']
+                ):
                     found_paths.append(path)
 
                     if resp.status_code == 200:
                         result.k8s_api_exposed = True
-                        result.findings.append({
-                            "type": "k8s_api_exposed_unauthenticated",
-                            "endpoint": f"{base}{path}",
-                            "severity": "CRITICAL",
-                            "detail": f"Kubernetes API server accessible without authentication at {path}",
-                        })
+                        result.findings.append(
+                            {
+                                "type": "k8s_api_exposed_unauthenticated",
+                                "endpoint": f"{base}{path}",
+                                "severity": "CRITICAL",
+                                "detail": f"Kubernetes API server accessible without authentication at {path}",
+                            }
+                        )
 
         except Exception:
             pass
@@ -238,12 +264,14 @@ async def _check_k8s_dashboard(
                 if "kubernetes dashboard" in body or "kubernetes-dashboard" in body:
                     result.k8s_dashboard_exposed = True
                     severity = "CRITICAL"
-                    result.findings.append({
-                        "type": "k8s_dashboard_exposed",
-                        "endpoint": f"{base}{path}",
-                        "severity": severity,
-                        "detail": f"Kubernetes Dashboard publicly accessible — cluster management UI exposed",
-                    })
+                    result.findings.append(
+                        {
+                            "type": "k8s_dashboard_exposed",
+                            "endpoint": f"{base}{path}",
+                            "severity": severity,
+                            "detail": "Kubernetes Dashboard publicly accessible — cluster management UI exposed",
+                        }
+                    )
                     return
         except Exception:
             pass
@@ -266,24 +294,30 @@ async def _check_container_port_exposure(
         async with sem:
             try:
                 loop = asyncio.get_event_loop()
-                fut = loop.run_in_executor(
-                    None, lambda: _tcp_connect(host_ip, port)
-                )
+                fut = loop.run_in_executor(None, lambda: _tcp_connect(host_ip, port))
                 is_open = await asyncio.wait_for(fut, timeout=2.0)
                 if is_open:
-                    severity = "CRITICAL" if port in (2375, 10250, 10255, 2379, 6443) else "RED"
-                    result.container_ports_open.append({
-                        "port": port,
-                        "service": desc,
-                        "severity": severity,
-                    })
-                    result.findings.append({
-                        "type": "container_port_exposed",
-                        "port": port,
-                        "service": desc,
-                        "severity": severity,
-                        "detail": f"Container/orchestration port {port} ({desc}) open on {host_ip}",
-                    })
+                    severity = (
+                        "CRITICAL"
+                        if port in (2375, 10250, 10255, 2379, 6443)
+                        else "RED"
+                    )
+                    result.container_ports_open.append(
+                        {
+                            "port": port,
+                            "service": desc,
+                            "severity": severity,
+                        }
+                    )
+                    result.findings.append(
+                        {
+                            "type": "container_port_exposed",
+                            "port": port,
+                            "service": desc,
+                            "severity": severity,
+                            "detail": f"Container/orchestration port {port} ({desc}) open on {host_ip}",
+                        }
+                    )
             except Exception:
                 pass
 
@@ -296,6 +330,7 @@ async def _check_container_port_exposure(
 def _tcp_connect(host: str, port: int, timeout: float = 1.5) -> bool:
     """Synchronous TCP connect probe."""
     import socket as _socket
+
     try:
         s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
         s.settimeout(timeout)
@@ -313,22 +348,30 @@ async def _check_cloud_cluster_dns(
     """Check DNS for cloud cluster indicators in subdomains."""
     try:
         import dns.resolver  # type: ignore
+
         answers = dns.resolver.resolve(domain, "A")
         ip_str = str(answers[0])
 
         # Check if IP resolves to cloud range (rough indicator)
-        if any(ip_str.startswith(prefix) for prefix in ["34.", "35.", "130.211.", "104.198."]):
-            result.cloud_cluster_indicators.append({
-                "type": "gcp_ip_range",
-                "ip": ip_str,
-                "detail": "IP in Google Cloud range — likely GKE/GCE hosted",
-            })
+        if any(
+            ip_str.startswith(prefix)
+            for prefix in ["34.", "35.", "130.211.", "104.198."]
+        ):
+            result.cloud_cluster_indicators.append(
+                {
+                    "type": "gcp_ip_range",
+                    "ip": ip_str,
+                    "detail": "IP in Google Cloud range — likely GKE/GCE hosted",
+                }
+            )
         elif any(ip_str.startswith(prefix) for prefix in ["52.", "54.", "18.", "3."]):
-            result.cloud_cluster_indicators.append({
-                "type": "aws_ip_range",
-                "ip": ip_str,
-                "detail": "IP in AWS range — likely EKS/ECS hosted",
-            })
+            result.cloud_cluster_indicators.append(
+                {
+                    "type": "aws_ip_range",
+                    "ip": ip_str,
+                    "detail": "IP in AWS range — likely EKS/ECS hosted",
+                }
+            )
     except Exception:
         pass
 
@@ -338,11 +381,13 @@ async def _check_cloud_cluster_dns(
         try:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, lambda: socket.gethostbyname(subdomain))
-            result.cloud_cluster_indicators.append({
-                "type": "cluster_dns_subdomain",
-                "subdomain": subdomain,
-                "detail": f"Cluster-pattern DNS subdomain resolves — K8s API surface may exist",
-            })
+            result.cloud_cluster_indicators.append(
+                {
+                    "type": "cluster_dns_subdomain",
+                    "subdomain": subdomain,
+                    "detail": "Cluster-pattern DNS subdomain resolves — K8s API surface may exist",
+                }
+            )
         except Exception:
             pass
 
@@ -361,18 +406,22 @@ async def _check_container_body_signatures(
         # Header signatures
         for header, sig_type in CONTAINER_SIGNATURES.items():
             if header in headers:
-                result.container_signatures_found.append({
-                    "type": sig_type,
-                    "source": f"header:{header}",
-                })
+                result.container_signatures_found.append(
+                    {
+                        "type": sig_type,
+                        "source": f"header:{header}",
+                    }
+                )
 
         # Body signatures
         for pattern, sig_type in CONTAINER_BODY_SIGNATURES:
             if pattern.search(body):
-                result.container_signatures_found.append({
-                    "type": sig_type,
-                    "source": "response_body",
-                })
+                result.container_signatures_found.append(
+                    {
+                        "type": sig_type,
+                        "source": "response_body",
+                    }
+                )
 
     except Exception:
         pass

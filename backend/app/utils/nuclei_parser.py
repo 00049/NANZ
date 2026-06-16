@@ -8,18 +8,19 @@ Each finding contains template info, severity, matched-at URL, etc.
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 # Only allow safe template categories — no active exploitation
-SAFE_TEMPLATE_CATEGORIES = frozenset({
-    "technologies",
-    "exposures",
-    "misconfigurations",
-    "default-logins",
-    "takeovers",
-})
+SAFE_TEMPLATE_CATEGORIES = frozenset(
+    {
+        "technologies",
+        "exposures",
+        "misconfigurations",
+        "default-logins",
+        "takeovers",
+    }
+)
 
 # Map nuclei severity strings to our severity system
 NUCLEI_SEVERITY_MAP = {
@@ -43,9 +44,9 @@ class NucleiFinding:
     description: str
     tags: list[str] = field(default_factory=list)
     reference: list[str] = field(default_factory=list)
-    matcher_name: Optional[str] = None
+    matcher_name: str | None = None
     extracted_results: list[str] = field(default_factory=list)
-    curl_command: Optional[str] = None
+    curl_command: str | None = None
 
 
 def parse_nuclei_output(raw_output: str) -> list[NucleiFinding]:

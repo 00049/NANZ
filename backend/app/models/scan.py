@@ -1,33 +1,49 @@
-import uuid
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, text, Index
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.db.base import Base
+
 
 class Scan(Base):
     """
     Scan model storing raw findings and execution status.
     """
+
     __tablename__ = "scans"
 
     id = Column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        server_default=text("gen_random_uuid()")
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True, index=True)
-    domain_id = Column(UUID(as_uuid=True), ForeignKey("domains.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    domain_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("domains.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     url = Column(Text, nullable=False)
     domain = Column(String(255), nullable=False)
     ip_address = Column(String(45), nullable=True)
-    status = Column(String(20), default="queued")  # queued/running/complete/failed/retrying
+    status = Column(
+        String(20), default="queued"
+    )  # queued/running/complete/failed/retrying
     scan_type = Column(String(10), default="free")  # free/paid
-    
+
     raw_findings = Column(JSONB, nullable=True)
     scan_duration_ms = Column(Integer, nullable=True)
     error_message = Column(Text, nullable=True)
-    
+
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
     completed_at = Column(DateTime(timezone=True), nullable=True)
     requester_ip = Column(String(45), nullable=True)

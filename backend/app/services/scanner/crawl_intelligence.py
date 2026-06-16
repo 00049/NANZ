@@ -5,19 +5,28 @@ Parses robots.txt for sensitive paths and scans sitemap.xml for structural IDORs
 or sensitive administrative endpoints.
 """
 
-import httpx
 import logging
-from dataclasses import dataclass, field
-from typing import Optional
-from urllib.parse import urljoin
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
 SENSITIVE_KEYWORDS = [
-    "admin", "login", "secret", "api", "dashboard", "portal",
-    "backup", "config", "staging", "dev", "test"
+    "admin",
+    "login",
+    "secret",
+    "api",
+    "dashboard",
+    "portal",
+    "backup",
+    "config",
+    "staging",
+    "dev",
+    "test",
 ]
+
 
 @dataclass
 class CrawlResult:
@@ -27,10 +36,12 @@ class CrawlResult:
     sitemap_found: bool = False
     sitemap_sensitive_urls: list[str] = field(default_factory=list)
     total_urls_found: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
-async def _parse_robots(client: httpx.AsyncClient, domain: str, result: CrawlResult) -> None:
+async def _parse_robots(
+    client: httpx.AsyncClient, domain: str, result: CrawlResult
+) -> None:
     url = f"https://{domain}/robots.txt"
     try:
         res = await client.get(url)
@@ -50,7 +61,9 @@ async def _parse_robots(client: httpx.AsyncClient, domain: str, result: CrawlRes
         logger.debug(f"robots.txt fetch failed for {domain}: {e}")
 
 
-async def _parse_sitemap(client: httpx.AsyncClient, domain: str, result: CrawlResult) -> None:
+async def _parse_sitemap(
+    client: httpx.AsyncClient, domain: str, result: CrawlResult
+) -> None:
     url = f"https://{domain}/sitemap.xml"
     try:
         res = await client.get(url)
@@ -60,7 +73,9 @@ async def _parse_sitemap(client: httpx.AsyncClient, domain: str, result: CrawlRe
                 root = ET.fromstring(res.content)
                 # sitemap namespace is usually http://www.sitemaps.org/schemas/sitemap/0.9
                 urls = []
-                for loc in root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}loc"):
+                for loc in root.findall(
+                    ".//{http://www.sitemaps.org/schemas/sitemap/0.9}loc"
+                ):
                     if loc.text:
                         urls.append(loc.text)
                 # Fallback without namespace
@@ -68,14 +83,14 @@ async def _parse_sitemap(client: httpx.AsyncClient, domain: str, result: CrawlRe
                     for loc in root.findall(".//loc"):
                         if loc.text:
                             urls.append(loc.text)
-                
+
                 result.total_urls_found = len(urls)
                 for u in urls:
                     for keyword in SENSITIVE_KEYWORDS:
                         if keyword in u.lower():
                             result.sitemap_sensitive_urls.append(u)
                             break
-                            
+
                 # Limit size
                 result.sitemap_sensitive_urls = result.sitemap_sensitive_urls[:20]
             except ET.ParseError:
@@ -88,10 +103,12 @@ async def run(domain: str) -> CrawlResult:
     """Run crawl intelligence analysis."""
     result = CrawlResult()
     try:
-        async with httpx.AsyncClient(timeout=5.0, verify=False, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=5.0, verify=False, follow_redirects=True
+        ) as client:
             await _parse_robots(client, domain, result)
             await _parse_sitemap(client, domain, result)
-            
+
             # Deduplicate sensitive exposed
             result.robots_sensitive_exposed = list(set(result.robots_sensitive_exposed))
     except Exception as e:

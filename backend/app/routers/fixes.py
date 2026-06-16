@@ -1,7 +1,6 @@
 import logging
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 
@@ -20,7 +19,7 @@ _optional_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=F
 @router.post("/findings/fix", response_model=FixResponse)
 async def generate_fix(
     body: FixRequest,
-    token: Optional[str] = Depends(_optional_oauth2),
+    token: str | None = Depends(_optional_oauth2),
 ) -> FixResponse:
     """Generate an AI-powered remediation guide for a single finding."""
     try:
@@ -40,7 +39,7 @@ async def generate_fix(
 @router.post("/findings/fix/stream")
 async def stream_fix(
     body: FixRequest,
-    token: Optional[str] = Depends(_optional_oauth2),
+    token: str | None = Depends(_optional_oauth2),
 ) -> StreamingResponse:
     """Stream an AI-powered remediation guide token-by-token via SSE."""
     try:

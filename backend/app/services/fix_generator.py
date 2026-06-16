@@ -7,9 +7,8 @@ API key is missing or calls fail. Results are cached in Redis for 24 hours.
 import json
 import logging
 import re
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
-from fastapi import HTTPException
 from redis.asyncio import Redis
 
 from app.config import settings
@@ -62,7 +61,9 @@ Generate the remediation guide for this finding."""
 def _has_openai_key() -> bool:
     """Check if a real OpenAI API key is configured."""
     key = settings.OPENAI_API_KEY
-    return bool(key and key not in ("", "your_openai_api_key_here", "sk-xxx", "changeme"))
+    return bool(
+        key and key not in ("", "your_openai_api_key_here", "sk-xxx", "changeme")
+    )
 
 
 def _make_cache_key(finding_title: str, category: str) -> str:
@@ -77,11 +78,11 @@ def _extract_json(text: str) -> str:
 
     # Strip markdown fences first
     if cleaned.startswith("```json"):
-        cleaned = cleaned[len("```json"):].strip()
+        cleaned = cleaned[len("```json") :].strip()
     if cleaned.startswith("```"):
-        cleaned = cleaned[len("```"):].strip()
+        cleaned = cleaned[len("```") :].strip()
     if cleaned.endswith("```"):
-        cleaned = cleaned[:-len("```")].strip()
+        cleaned = cleaned[: -len("```")].strip()
 
     # Strip everything before the first `{` and after the last `}`
     first_brace = cleaned.find("{")
@@ -106,6 +107,7 @@ class FixGeneratorService:
         if _has_openai_key():
             try:
                 from openai import AsyncOpenAI
+
                 self._client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
                 logger.info("OpenAI client initialized — AI fixes enabled")
             except Exception as exc:
@@ -147,7 +149,9 @@ class FixGeneratorService:
 
                 logger.warning("OpenAI parse failed twice, falling back to rule-based")
             except Exception as exc:
-                logger.warning("OpenAI call failed, falling back to rule-based: %s", exc)
+                logger.warning(
+                    "OpenAI call failed, falling back to rule-based: %s", exc
+                )
 
         # 3. Rule-based fallback
         data = generate_rule_based_fix(req)
@@ -185,7 +189,7 @@ class FixGeneratorService:
                     model="gpt-4o-mini",
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": user_prompt}
+                        {"role": "user", "content": user_prompt},
                     ],
                     response_format={"type": "json_object"},
                     stream=True,
@@ -203,7 +207,9 @@ class FixGeneratorService:
                     self._cache_write(cache_key, parsed)
                 return
             except Exception as exc:
-                logger.warning("OpenAI streaming failed, falling back to rule-based: %s", exc)
+                logger.warning(
+                    "OpenAI streaming failed, falling back to rule-based: %s", exc
+                )
 
         # ── Rule-based fallback (emit as single JSON payload) ──
         data = generate_rule_based_fix(req)
@@ -228,21 +234,23 @@ class FixGeneratorService:
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": user_prompt},
             ],
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
         )
         return response.choices[0].message.content.strip()
 
     def _cache_write(self, cache_key: str, data: dict) -> None:
         """Fire-and-forget cache write (runs in background)."""
         import asyncio
+
         async def _write():
             try:
                 await self._redis.set(cache_key, json.dumps(data), ex=CACHE_TTL_SECONDS)
                 logger.debug("Cache WRITE for %s", cache_key)
             except Exception as exc:
                 logger.warning("Redis write failed: %s", exc)
+
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():

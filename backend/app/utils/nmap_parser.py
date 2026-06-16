@@ -7,16 +7,34 @@ Wraps python-nmap PortScanner and extracts structured port/service data.
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 # Ports we scan — safe, well-known services only
 SCAN_PORTS = [
-    21, 22, 23, 25, 53, 80, 110, 143,
-    443, 445, 587, 993, 995, 3306, 3389,
-    5432, 5900, 6379, 8080, 8443, 8888,
-    27017, 9200,
+    21,
+    22,
+    23,
+    25,
+    53,
+    80,
+    110,
+    143,
+    443,
+    445,
+    587,
+    993,
+    995,
+    3306,
+    3389,
+    5432,
+    5900,
+    6379,
+    8080,
+    8443,
+    8888,
+    27017,
+    9200,
 ]
 
 SCAN_PORTS_STR = ",".join(str(p) for p in SCAN_PORTS)
@@ -35,10 +53,10 @@ class NmapService:
     state: str  # open, closed, filtered
     protocol: str  # tcp, udp
     service_name: str
-    product: Optional[str] = None
-    version: Optional[str] = None
-    extra_info: Optional[str] = None
-    banner: Optional[str] = None
+    product: str | None = None
+    version: str | None = None
+    extra_info: str | None = None
+    banner: str | None = None
     risk_level: str = "INFO"  # CRITICAL, RED, AMBER, GREEN, INFO
 
 
@@ -48,8 +66,8 @@ class NmapResult:
 
     open_ports: list[int] = field(default_factory=list)
     services: list[NmapService] = field(default_factory=list)
-    scan_info: Optional[str] = None
-    error: Optional[str] = None
+    scan_info: str | None = None
+    error: str | None = None
 
 
 def _classify_port_risk(port: int) -> str:

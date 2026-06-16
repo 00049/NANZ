@@ -7,10 +7,10 @@ and Azure Blob Storage for public listing.
 All checks are passive HTTP GET requests — no write operations.
 """
 
-import httpx
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class CloudResult:
     public_buckets: list[dict] = field(default_factory=list)
     protected_buckets: list[dict] = field(default_factory=list)
     total_checked: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 def _generate_bucket_names(domain: str) -> list[str]:
@@ -68,7 +68,7 @@ def _generate_bucket_names(domain: str) -> list[str]:
     return unique[:MAX_REQUESTS]
 
 
-async def _check_s3(client: httpx.AsyncClient, bucket: str) -> Optional[dict]:
+async def _check_s3(client: httpx.AsyncClient, bucket: str) -> dict | None:
     """Check AWS S3 bucket for public access."""
     urls = [
         f"https://{bucket}.s3.amazonaws.com/",
@@ -81,9 +81,19 @@ async def _check_s3(client: httpx.AsyncClient, bucket: str) -> Optional[dict]:
             body = res.text[:500]
 
             if res.status_code == 200 and "<ListBucketResult" in body:
-                return {"provider": "AWS S3", "url": url, "name": bucket, "access": "public"}
+                return {
+                    "provider": "AWS S3",
+                    "url": url,
+                    "name": bucket,
+                    "access": "public",
+                }
             elif res.status_code == 403:
-                return {"provider": "AWS S3", "url": url, "name": bucket, "access": "protected"}
+                return {
+                    "provider": "AWS S3",
+                    "url": url,
+                    "name": bucket,
+                    "access": "protected",
+                }
             # 404 or NoSuchBucket = doesn't exist, skip
         except Exception:
             continue
@@ -91,24 +101,36 @@ async def _check_s3(client: httpx.AsyncClient, bucket: str) -> Optional[dict]:
     return None
 
 
-async def _check_gcs(client: httpx.AsyncClient, bucket: str) -> Optional[dict]:
+async def _check_gcs(client: httpx.AsyncClient, bucket: str) -> dict | None:
     """Check Google Cloud Storage bucket for public access."""
     url = f"https://storage.googleapis.com/{bucket}/"
     try:
         res = await client.get(url)
         body = res.text[:500]
 
-        if res.status_code == 200 and ("<ListBucketResult" in body or "Contents" in body):
-            return {"provider": "Google Cloud Storage", "url": url, "name": bucket, "access": "public"}
+        if res.status_code == 200 and (
+            "<ListBucketResult" in body or "Contents" in body
+        ):
+            return {
+                "provider": "Google Cloud Storage",
+                "url": url,
+                "name": bucket,
+                "access": "public",
+            }
         elif res.status_code == 403:
-            return {"provider": "Google Cloud Storage", "url": url, "name": bucket, "access": "protected"}
+            return {
+                "provider": "Google Cloud Storage",
+                "url": url,
+                "name": bucket,
+                "access": "protected",
+            }
     except Exception:
         pass
 
     return None
 
 
-async def _check_azure(client: httpx.AsyncClient, base: str) -> Optional[dict]:
+async def _check_azure(client: httpx.AsyncClient, base: str) -> dict | None:
     """Check Azure Blob Storage for public access."""
     url = f"https://{base}.blob.core.windows.net/{base}?restype=container&comp=list"
     try:
@@ -116,9 +138,19 @@ async def _check_azure(client: httpx.AsyncClient, base: str) -> Optional[dict]:
         body = res.text[:500]
 
         if res.status_code == 200 and "<EnumerationResults" in body:
-            return {"provider": "Azure Blob", "url": url, "name": base, "access": "public"}
+            return {
+                "provider": "Azure Blob",
+                "url": url,
+                "name": base,
+                "access": "public",
+            }
         elif res.status_code == 403:
-            return {"provider": "Azure Blob", "url": url, "name": base, "access": "protected"}
+            return {
+                "provider": "Azure Blob",
+                "url": url,
+                "name": base,
+                "access": "protected",
+            }
     except Exception:
         pass
 
@@ -139,7 +171,7 @@ async def run(domain: str) -> CloudResult:
             timeout=httpx.Timeout(5.0),
             follow_redirects=False,
             verify=False,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; ShieldCheck/2.0)"}
+            headers={"User-Agent": "Mozilla/5.0 (compatible; ShieldCheck/2.0)"},
         ) as client:
 
             for bucket in bucket_names:

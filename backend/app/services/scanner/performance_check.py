@@ -4,43 +4,52 @@ Performance Security Check.
 Checks TTFB (Time to First Byte), CDN usage, gzip compression, and open DNS resolver risks.
 """
 
-import httpx
 import logging
-import asyncio
 from dataclasses import dataclass
-from typing import Optional
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
 CDN_HEADERS = [
-    "x-fastly-request-id", "cf-ray", "x-amz-cf-id", "x-edgecast-", 
-    "x-akamai-", "server: cloudflare", "server: awselb"
+    "x-fastly-request-id",
+    "cf-ray",
+    "x-amz-cf-id",
+    "x-edgecast-",
+    "x-akamai-",
+    "server: cloudflare",
+    "server: awselb",
 ]
+
 
 @dataclass
 class PerformanceResult:
     ttfb_ms: float = 0.0
     uses_cdn: bool = False
-    cdn_provider: Optional[str] = None
+    cdn_provider: str | None = None
     uses_gzip: bool = False
     open_dns_resolver: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
 
 async def _check_ttfb_and_cdn(domain: str, result: PerformanceResult) -> None:
     try:
-        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10.0) as client:
+        async with httpx.AsyncClient(
+            verify=False, follow_redirects=True, timeout=10.0
+        ) as client:
             # First request without gzip to get raw TTFB
             res = await client.get(f"https://{domain}")
             result.ttfb_ms = res.elapsed.total_seconds() * 1000
-            
+
             # Check CDN
             headers_lower = {k.lower(): v.lower() for k, v in res.headers.items()}
-            
+
             if "cf-ray" in headers_lower or headers_lower.get("server") == "cloudflare":
                 result.uses_cdn = True
                 result.cdn_provider = "Cloudflare"
-            elif "x-amz-cf-id" in headers_lower or headers_lower.get("server", "").startswith("awselb"):
+            elif "x-amz-cf-id" in headers_lower or headers_lower.get(
+                "server", ""
+            ).startswith("awselb"):
                 result.uses_cdn = True
                 result.cdn_provider = "AWS CloudFront/ELB"
             elif any(k.startswith("x-fastly") for k in headers_lower):
@@ -53,11 +62,14 @@ async def _check_ttfb_and_cdn(domain: str, result: PerformanceResult) -> None:
             # Check Gzip
             # We need to explicitly request it
             res_gzip = await client.get(
-                f"https://{domain}", 
-                headers={"Accept-Encoding": "gzip, deflate, br"}
+                f"https://{domain}", headers={"Accept-Encoding": "gzip, deflate, br"}
             )
             content_encoding = res_gzip.headers.get("Content-Encoding", "").lower()
-            if "gzip" in content_encoding or "br" in content_encoding or "deflate" in content_encoding:
+            if (
+                "gzip" in content_encoding
+                or "br" in content_encoding
+                or "deflate" in content_encoding
+            ):
                 result.uses_gzip = True
 
     except Exception as e:
@@ -74,5 +86,5 @@ async def run(domain: str) -> PerformanceResult:
     except Exception as e:
         logger.error(f"Performance check failed for {domain}: {e}", exc_info=True)
         result.error = "Performance check failed"
-        
+
     return result

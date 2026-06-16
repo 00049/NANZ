@@ -1,15 +1,18 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional
-from uuid import UUID
 from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, EmailStr
+
 
 class UserBase(BaseModel):
     email: EmailStr
-    name: Optional[str] = None
-    company: Optional[str] = None
+    name: str | None = None
+    company: str | None = None
+
 
 class UserCreate(UserBase):
     password: str
+
 
 class UserResponse(UserBase):
     id: UUID
@@ -18,11 +21,12 @@ class UserResponse(UserBase):
     scan_credits: int
     created_at: datetime
     updated_at: datetime
-    last_login_at: Optional[datetime] = None
+    last_login_at: datetime | None = None
 
     class Config:
         from_attributes = True
 
+
 class UserUpdate(BaseModel):
-    name: Optional[str] = None
-    company: Optional[str] = None
+    name: str | None = None
+    company: str | None = None
