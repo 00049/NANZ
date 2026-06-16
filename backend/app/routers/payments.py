@@ -54,13 +54,13 @@ async def create_payment(
     amount_paise = 49900
     try:
         order_id = create_razorpay_order(amount_paise, receipt=str(body.scan_id))
-    except (ValueError, RuntimeError, KeyError) as e:
+    except Exception as e:
         logger.error(
             f"Razorpay order creation failed for scan_id={body.scan_id}: {e}",
             exc_info=True,
         )
         raise HTTPException(
-            status_code=503, detail="Payment provider unavailable"
+            status_code=400, detail=f"Payment initialization failed: {str(e)}"
         ) from e
 
     payment = Payment(

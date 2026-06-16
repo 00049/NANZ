@@ -76,7 +76,14 @@ export async function createPaymentOrder(scanId: string, email: string) {
     headers: authHeaders(),
     body: JSON.stringify({ scan_id: scanId, email }),
   });
-  if (!res.ok) throw new Error('Failed to create payment order');
+  if (!res.ok) {
+    let errMsg = 'Failed to create payment order';
+    try {
+      const errRes = await res.json();
+      if (errRes.detail) errMsg = errRes.detail;
+    } catch (e) {}
+    throw new Error(errMsg);
+  }
   return res.json();
 }
 
