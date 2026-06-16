@@ -780,7 +780,6 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                                 user = user_res.scalars().first()
                                 if user and user.email:
                                     from app.services.email_service import send_report_ready_email
-                                    import asyncio
                                     grade = aspm_data.get("compliance_v2", {}).get("grade", overall_severity) if aspm_data else overall_severity
                                     asyncio.create_task(asyncio.to_thread(
                                         send_report_ready_email,
