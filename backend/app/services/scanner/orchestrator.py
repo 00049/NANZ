@@ -51,6 +51,8 @@ from app.services.scanner import business_logic_check
 from app.services.scanner import container_security_check
 from app.services.scanner import dependency_check
 from app.services.scanner import llm_security_check
+from app.services.scanner import identity_auth_check
+from app.services.scanner import iac_exposure_check
 from app.services.oast.oast_client import OASTClient, OASTUnavailableError
 from app.services.aspm_engine import compute_aspm_report
 from app.services.cve_intelligence import map_cves
@@ -91,6 +93,11 @@ EXPLOITABILITY_MULTIPLIERS: dict[str, float] = {
     "cors_credentials_wildcard": 2.0,
     "trace_with_reflection": 1.8,
     "webapp_sql_injection": 2.0,
+    "jwt_none_alg_bypass": 2.5,
+    "jwt_sensitive_data_exposure": 2.0,
+    "iac_tfstate_exposed": 2.5,
+    "iac_dockerfile_exposed": 2.0,
+    "iac_k8s_manifest_exposed": 2.0,
     # Proof-confirmed findings get 1.5x bonus (set dynamically)
     # _PROOF_CONFIRMED_ -> 1.5x (applied in scoring loop)
     # Network exposure
@@ -399,6 +406,7 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
         # Enterprise modules
         "iast_behavioral", "oast_check", "api_security", "graphql",
         "business_logic", "container_security", "dependency", "llm_security",
+        "identity_auth", "iac_exposure",
     ]
     progress = {name: "pending" for name in check_names}
 
@@ -529,6 +537,8 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                 "container_security": 20.0,
                 "dependency":         20.0,
                 "llm_security":       20.0,
+                "identity_auth":      20.0,
+                "iac_exposure":       20.0,
             }
             timeout = enterprise_timeout_map.get(name, 25.0)
             try:
@@ -552,7 +562,7 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                 progress[name] = "failed"
                 return {**fallback, "error": str(exc)[:200]}
 
-        ent_iast, ent_oast, ent_api, ent_graphql, ent_bl, ent_container, ent_dep, ent_llm = \
+        ent_iast, ent_oast, ent_api, ent_graphql, ent_bl, ent_container, ent_dep, ent_llm, ent_identity, ent_iac = \
             await asyncio.gather(
                 wrap_enterprise("iast_behavioral",
                     iast_behavioral.run(url, domain),
@@ -578,6 +588,12 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
                 wrap_enterprise("llm_security",
                     llm_security_check.run(url, domain),
                     {"llm_surface_detected": False}),
+                wrap_enterprise("identity_auth",
+                    identity_auth_check.run(url, domain),
+                    {"findings": []}),
+                wrap_enterprise("iac_exposure",
+                    iac_exposure_check.run(url, domain),
+                    {"findings": []}),
                 return_exceptions=False,
             )
 
@@ -597,6 +613,8 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
             "container": ent_container,
             "dependency": ent_dep,
             "llm_security": ent_llm,
+            "identity_auth": ent_identity,
+            "iac_exposure": ent_iac,
         }
 
         # Save report if ANY module succeeded (not all_failed)

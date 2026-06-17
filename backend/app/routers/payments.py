@@ -43,9 +43,11 @@ async def create_payment(
         )
 
     existing_payment_result = await db.execute(
-        select(Payment).where(Payment.scan_id == body.scan_id, Payment.status == "paid")
+        select(Payment).where(Payment.scan_id == body.scan_id)
     )
-    if existing_payment_result.scalars().first():
+    existing_payment = existing_payment_result.scalars().first()
+
+    if existing_payment and existing_payment.status == "paid":
         raise HTTPException(status_code=400, detail="Already paid for this scan")
 
     if not create_razorpay_order:
@@ -63,14 +65,23 @@ async def create_payment(
             status_code=400, detail=f"Payment initialization failed: {str(e)}"
         ) from e
 
-    payment = Payment(
-        scan_id=body.scan_id,
-        user_email=body.email,
-        amount_paise=amount_paise,
-        razorpay_order_id=order_id,
-    )
-    try:
+    if existing_payment:
+        # Update existing record instead of creating a new one to avoid UniqueViolationError
+        existing_payment.razorpay_order_id = order_id
+        existing_payment.amount_paise = amount_paise
+        existing_payment.user_email = body.email
+        existing_payment.status = "created"
+        payment = existing_payment
+    else:
+        payment = Payment(
+            scan_id=body.scan_id,
+            user_email=body.email,
+            amount_paise=amount_paise,
+            razorpay_order_id=order_id,
+        )
         db.add(payment)
+
+    try:
         await db.commit()
         await db.refresh(payment)
     except SQLAlchemyError as e:
