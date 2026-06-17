@@ -159,7 +159,7 @@ export default function HomePage() {
               </motion.h1>
 
               <motion.p variants={fadeUp} className="text-lg text-text-secondary max-w-lg mb-8">
-                29 security checks run automatically. Every finding explained in plain English with the exact fix. DPDP Act violations flagged by section number. Starts free — full report from Rs. 299.
+                29 security checks run automatically. Every finding explained in plain English with the exact fix. DPDP Act violations flagged by section number. Starts free — full report from Rs. 499.
               </motion.p>
 
               {/* Scan Input */}
