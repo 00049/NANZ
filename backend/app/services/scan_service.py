@@ -45,11 +45,31 @@ async def create_new_scan(
             result = await db.execute(select(Scan).where(Scan.id == cached_scan_id))
             existing = result.scalars().first()
             if existing and existing.status == "complete":
-                return {
-                    "scan_id": existing.id,
-                    "status": "complete",
-                    "estimated_duration_seconds": 0,
-                }
+                if existing.user_id == user_id:
+                    return {
+                        "scan_id": existing.id,
+                        "status": "complete",
+                        "estimated_duration_seconds": 0,
+                    }
+                elif existing.user_id is None and user_id is not None:
+                    # Claim the anonymous scan for the new user
+                    existing.user_id = user_id
+                    try:
+                        await db.commit()
+                    except Exception as e:
+                        logger.error(f"Failed to claim anonymous scan: {e}")
+                    return {
+                        "scan_id": existing.id,
+                        "status": "complete",
+                        "estimated_duration_seconds": 0,
+                    }
+                elif user_id is None:
+                    return {
+                        "scan_id": existing.id,
+                        "status": "complete",
+                        "estimated_duration_seconds": 0,
+                    }
+                # If existing.user_id != user_id and existing.user_id is not None, bypass cache and run a new scan
     except Exception as e:
         logger.warning(f"Redis cache check failed: {e}")
 
