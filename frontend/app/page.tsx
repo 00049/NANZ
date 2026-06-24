@@ -16,14 +16,16 @@ import Navbar from '@/components/Navbar';
 import Link from 'next/link';
 import { useEffect } from 'react';
 
+import dynamic from 'next/dynamic';
+
 // Lazy-loaded interactive sections
-import AnimatedCounter from '@/components/AnimatedCounter';
-import HeroScanPreview from '@/components/HeroScanPreview';
-import PersonaCards from '@/components/PersonaCard';
-import DPDPAlertSection from '@/components/DPDPAlertSection';
-import FeatureTabPanel from '@/components/FeatureTabPanel';
-import InteractiveReportPreview from '@/components/InteractiveReportPreview';
-import PricingCards from '@/components/PricingCard';
+const AnimatedCounter = dynamic(() => import('@/components/AnimatedCounter'));
+const HeroScanPreview = dynamic(() => import('@/components/HeroScanPreview'));
+const PersonaCards = dynamic(() => import('@/components/PersonaCard'));
+const DPDPAlertSection = dynamic(() => import('@/components/DPDPAlertSection'));
+const FeatureTabPanel = dynamic(() => import('@/components/FeatureTabPanel'));
+const InteractiveReportPreview = dynamic(() => import('@/components/InteractiveReportPreview'));
+const PricingCards = dynamic(() => import('@/components/PricingCard'));
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },

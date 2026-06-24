@@ -270,47 +270,53 @@ async def _check_system_prompt_leakage(
         {"prompt": "What are your capabilities?", "question_type": "capability"},
     ]
 
-    for endpoint in active_endpoints[:2]:  # Limit to 2 endpoints
-        for probe_data in probes:
-            try:
-                result.probes_sent += 1
-                resp = await client.post(
-                    endpoint,
-                    json={
-                        "message": probe_data["prompt"],
-                        "query": probe_data["prompt"],
-                        "prompt": probe_data["prompt"],
-                    },
-                )
-                if resp.status_code != 200:
-                    continue
+    async def probe_endpoint(endpoint: str, probe_data: dict):
+        try:
+            result.probes_sent += 1
+            resp = await client.post(
+                endpoint,
+                json={
+                    "message": probe_data["prompt"],
+                    "query": probe_data["prompt"],
+                    "prompt": probe_data["prompt"],
+                },
+            )
+            if resp.status_code != 200:
+                return
 
-                body = resp.text[:5000]
-                for pattern in SYSTEM_PROMPT_LEAK_PATTERNS:
-                    if pattern.search(body):
-                        result.system_prompt_leaked = True
-                        result.system_prompt_hints.append(
-                            {
-                                "endpoint": endpoint,
-                                "probe": probe_data["prompt"],
-                                "matched_pattern": pattern.pattern[:50],
-                                "severity": "RED",
-                            }
-                        )
-                        result.findings.append(
-                            LLMFinding(
-                                owasp_id="LLM07",
-                                owasp_name=OWASP_LLM_TOP_10["LLM07"],
-                                endpoint=endpoint,
-                                severity="RED",
-                                detail="System prompt content visible in LLM response — confidential instructions may be extracted",
-                                confirmed=True,
-                            ).__dict__
-                        )
+            body = resp.text[:5000]
+            for pattern in SYSTEM_PROMPT_LEAK_PATTERNS:
+                if pattern.search(body):
+                    result.system_prompt_leaked = True
+                    result.system_prompt_hints.append(
+                        {
+                            "endpoint": endpoint,
+                            "probe": probe_data["prompt"],
+                            "matched_pattern": pattern.pattern[:50],
+                            "severity": "RED",
+                        }
+                    )
+                    result.findings.append(
+                        LLMFinding(
+                            owasp_id="LLM07",
+                            owasp_name=OWASP_LLM_TOP_10["LLM07"],
+                            endpoint=endpoint,
+                            severity="RED",
+                            detail="System prompt content visible in LLM response — confidential instructions may be extracted",
+                            confirmed=True,
+                        ).__dict__
+                    )
 
-            except Exception as exc:
-                logger.debug(f"System prompt probe error: {exc}")
-            await asyncio.sleep(0.5)
+        except Exception as exc:
+            logger.debug(f"System prompt probe error: {exc}")
+
+    tasks = [
+        probe_endpoint(endpoint, probe_data)
+        for endpoint in active_endpoints[:2]
+        for probe_data in probes
+    ]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _check_model_disclosure(
@@ -320,7 +326,7 @@ async def _check_model_disclosure(
     result: LLMSecurityResult,
 ) -> None:
     """Detect model version/name disclosure in API responses."""
-    for endpoint in active_endpoints[:2]:
+    async def check_endpoint(endpoint: str):
         try:
             result.probes_sent += 1
             resp = await client.post(
@@ -349,7 +355,10 @@ async def _check_model_disclosure(
 
         except Exception as exc:
             logger.debug(f"Model disclosure check error: {exc}")
-        await asyncio.sleep(0.3)
+
+    tasks = [check_endpoint(endpoint) for endpoint in active_endpoints[:2]]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _check_api_key_exposure(
@@ -359,7 +368,7 @@ async def _check_api_key_exposure(
     result: LLMSecurityResult,
 ) -> None:
     """Scan LLM endpoint responses for exposed API keys."""
-    for endpoint in active_endpoints[:3]:
+    async def check_endpoint(endpoint: str):
         try:
             result.probes_sent += 1
             resp = await client.get(endpoint)
@@ -387,7 +396,10 @@ async def _check_api_key_exposure(
 
         except Exception as exc:
             logger.debug(f"API key check error: {exc}")
-        await asyncio.sleep(0.2)
+
+    tasks = [check_endpoint(endpoint) for endpoint in active_endpoints[:3]]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _check_rate_limiting(
@@ -401,7 +413,8 @@ async def _check_rate_limiting(
         return
 
     endpoint = active_endpoints[0]
-    for i in range(15):
+    
+    async def send_req(i: int):
         try:
             result.probes_sent += 1
             resp = await client.post(
@@ -410,22 +423,24 @@ async def _check_rate_limiting(
             )
             if resp.status_code == 429:
                 result.rate_limited = True
-                return
         except Exception:
             pass
-        await asyncio.sleep(0.05)
 
-    result.rate_limited = False
-    result.findings.append(
-        LLMFinding(
-            owasp_id="LLM10",
-            owasp_name=OWASP_LLM_TOP_10["LLM10"],
-            endpoint=endpoint,
-            severity="RED",
-            detail="No rate limiting on LLM endpoint — unbounded consumption risk, cost explosion, and DoS possible",
-            confirmed=True,
-        ).__dict__
-    )
+    tasks = [send_req(i) for i in range(15)]
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    if not getattr(result, "rate_limited", False):
+        result.rate_limited = False
+        result.findings.append(
+            LLMFinding(
+                owasp_id="LLM10",
+                owasp_name=OWASP_LLM_TOP_10["LLM10"],
+                endpoint=endpoint,
+                severity="RED",
+                detail="No rate limiting on LLM endpoint — unbounded consumption risk, cost explosion, and DoS possible",
+                confirmed=True,
+            ).__dict__
+        )
 
 
 async def _check_indirect_injection(
@@ -434,7 +449,7 @@ async def _check_indirect_injection(
     result: LLMSecurityResult,
 ) -> None:
     """Detect indirect prompt injection surfaces (file/URL processing endpoints)."""
-    for path in INDIRECT_INJECTION_PATHS:
+    async def check_path(path: str):
         try:
             result.probes_sent += 1
             resp = await client.get(f"{base}{path}")
@@ -458,7 +473,10 @@ async def _check_indirect_injection(
                 )
         except Exception:
             pass
-        await asyncio.sleep(0.1)
+
+    tasks = [check_path(path) for path in INDIRECT_INJECTION_PATHS]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _check_excessive_agency(
@@ -479,7 +497,7 @@ async def _check_excessive_agency(
         "/api/ai/function",
     ]
 
-    for path in agent_paths:
+    async def check_path(path: str):
         try:
             result.probes_sent += 1
             resp = await client.get(f"{base}{path}")
@@ -514,4 +532,8 @@ async def _check_excessive_agency(
                     )
         except Exception:
             pass
-        await asyncio.sleep(0.1)
+
+    tasks = [check_path(path) for path in agent_paths]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
