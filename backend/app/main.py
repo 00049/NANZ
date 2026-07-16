@@ -52,6 +52,28 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.on_event("startup")
+async def run_migrations() -> None:
+    """Run Alembic migrations on startup — idempotent and safe."""
+    try:
+        import asyncio
+        from alembic import command
+        from alembic.config import Config
+
+        logger.info("🔄 Running Alembic migrations...")
+
+        def _run():
+            alembic_cfg = Config("alembic.ini")
+            alembic_cfg.set_main_option("script_location", "migrations")
+            command.upgrade(alembic_cfg, "head")
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _run)
+        logger.info("✅ Alembic migrations complete.")
+    except Exception as e:
+        logger.warning(f"Migration warning (may already be up to date): {e}")
+
+
+@app.on_event("startup")
 async def configure_dns() -> None:
     """Override system DNS with reliable public resolvers (avoids broken IPv6 nameservers)."""
     try:
