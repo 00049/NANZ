@@ -25,7 +25,11 @@ def upgrade() -> None:
     op.add_column('users', sa.Column('name', sa.String(length=255), nullable=True))
     op.add_column('users', sa.Column('company', sa.String(length=255), nullable=True))
     op.add_column('users', sa.Column('role', sa.String(length=50), nullable=True))
-    op.drop_constraint('users_email_key', 'users', type_='unique')
+    # Safe drop — constraint name may vary on fresh databases
+    try:
+        op.drop_constraint('users_email_key', 'users', type_='unique')
+    except Exception:
+        pass
     # ### end Alembic commands ###
 
 
