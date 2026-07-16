@@ -86,6 +86,8 @@ def upgrade() -> None:
     op.create_index('idx_report_shares_scan', 'report_share_links', ['scan_id', 'is_revoked'], unique=False)
     op.create_index(op.f('ix_report_share_links_scan_id'), 'report_share_links', ['scan_id'], unique=False)
     op.create_index(op.f('ix_report_share_links_token'), 'report_share_links', ['token'], unique=True)
+    # Add workspace_id to scans if not exists before indexing/FK
+    op.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS workspace_id UUID")
     op.create_index(op.f('ix_scans_workspace_id'), 'scans', ['workspace_id'], unique=False)
     op.create_foreign_key(None, 'scans', 'workspaces', ['workspace_id'], ['id'], ondelete='SET NULL')
     # ### end Alembic commands ###
