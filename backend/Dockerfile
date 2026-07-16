@@ -46,5 +46,8 @@ COPY . .
 ENV PYTHONPATH=/app
 ENV NUCLEI_TEMPLATES_PATH=/root/nuclei-templates
 
-# Command to run (usually overridden by docker-compose or run script for migrations + uvicorn)
+# Make start script executable
+RUN chmod +x ./start.sh
+
+# Command to run (runs migrations then starts uvicorn)
 CMD ["./start.sh"]
