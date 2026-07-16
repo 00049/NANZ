@@ -410,10 +410,26 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
     ]
     progress = {name: "pending" for name in check_names}
 
+    _redis_ok = True
     try:
         await redis_client.set(progress_key, json.dumps(progress), ex=3600)
-    except (ConnectionError, TimeoutError, OSError, ValueError):
-        pass
+    except (ConnectionError, TimeoutError, OSError, ValueError, Exception):
+        _redis_ok = False
+
+    async def _save_progress_to_db():
+        """Fallback: persist progress dict to scan.raw_findings when Redis is unavailable."""
+        try:
+            async with async_session_maker() as _db:
+                from sqlalchemy import select as _select
+                _res = await _db.execute(_select(Scan).where(Scan.id == scan_id))
+                _scan = _res.scalars().first()
+                if _scan:
+                    _findings = dict(_scan.raw_findings or {})
+                    _findings["_progress"] = progress
+                    _scan.raw_findings = _findings
+                    await _db.commit()
+        except Exception as _e:
+            logger.debug(f"DB progress fallback failed: {_e}")
 
     try:
         async def wrap_check(name: str, coroutine, fallback_factory) -> dict:
@@ -455,8 +471,9 @@ async def run_full_scan(scan_id: str, url: str, redis_client: Redis) -> None:
             finally:
                 try:
                     await redis_client.set(progress_key, json.dumps(progress), ex=3600)
-                except (ConnectionError, TimeoutError, OSError, ValueError):
-                    pass
+                except (ConnectionError, TimeoutError, OSError, ValueError, Exception):
+                    # Redis unavailable — persist progress to DB as fallback
+                    await _save_progress_to_db()
 
 
         waf_raw = await wrap_check(

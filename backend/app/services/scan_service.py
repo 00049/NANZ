@@ -139,6 +139,11 @@ async def get_scan_status_data(
         logger.warning(f"Redis error for scan_id={scan_id}: {e}")
         progress = {}
 
+    # DB fallback: when Redis is unavailable, read progress from raw_findings
+    if not progress and scan.raw_findings and "_progress" in scan.raw_findings:
+        progress = scan.raw_findings["_progress"]
+
+
     response_data = {
         "scan_id": scan.id,
         "status": scan.status,
